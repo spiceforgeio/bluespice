@@ -27,6 +27,21 @@ class NetlistBuilderTest {
         assertEquals(golden("rlc-series.sp"), builder.build(Circuits.rlcSeries()));
     }
 
+    @Test
+    void buildsDiodeClampGoldenNetlist() throws IOException {
+        assertEquals(golden("diode-clamp.sp"), builder.build(Circuits.diodeClamp()));
+    }
+
+    @Test
+    void buildsBjtAmpGoldenNetlist() throws IOException {
+        assertEquals(golden("bjt-amp.sp"), builder.build(Circuits.bjtAmp()));
+    }
+
+    @Test
+    void buildsMosfetSwitchGoldenNetlist() throws IOException {
+        assertEquals(golden("mosfet-switch.sp"), builder.build(Circuits.mosfetSwitch()));
+    }
+
     private String golden(String filename) throws IOException {
         try (var input = getClass().getClassLoader().getResourceAsStream("netlists/golden/" + filename)) {
             if (input == null) {

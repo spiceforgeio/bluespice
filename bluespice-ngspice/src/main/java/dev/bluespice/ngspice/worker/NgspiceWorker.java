@@ -1,10 +1,10 @@
 package dev.bluespice.ngspice.worker;
 
-import com.sun.jna.Pointer;
+import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.ngspice.NgspiceCallbacks;
 import dev.bluespice.ngspice.NgspiceLibrary;
-import dev.bluespice.ngspice.NgspiceVectorInfo;
+import dev.bluespice.ngspice.result.VectorExtractor;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -12,15 +12,16 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.OptionalDouble;
+import java.util.Locale;
 import java.util.Set;
 
 public final class NgspiceWorker {
     private final WorkerCallbacks callbacks = new WorkerCallbacks();
-    private final Set<String> nodes = new LinkedHashSet<>();
+    private final List<String> nodeNames = new ArrayList<>();
+    private final List<String> branchComponents = new ArrayList<>();
 
     private NgspiceWorker() {}
 
@@ -64,8 +65,9 @@ public final class NgspiceWorker {
     private WorkerProtocol.Response handle(WorkerProtocol.Command command) {
         try {
             return switch (command) {
-                case WorkerProtocol.Command.LoadCircuit loadCircuit -> loadCircuit(loadCircuit.netlist());
+                case WorkerProtocol.Command.LoadCircuit loadCircuit -> loadCircuit(loadCircuit);
                 case WorkerProtocol.Command.RunOperatingPoint ignored -> runOperatingPoint();
+                case WorkerProtocol.Command.Alter alter -> alter(alter.componentId(), alter.newValue());
                 case WorkerProtocol.Command.Exit ignored -> new WorkerProtocol.Response.Ok();
                 default -> new WorkerProtocol.Response.Error("command not implemented yet: "
                         + command.getClass().getSimpleName());
@@ -75,10 +77,16 @@ public final class NgspiceWorker {
         }
     }
 
-    private WorkerProtocol.Response loadCircuit(String netlist) {
-        String[] lines = netlist.lines().toArray(String[]::new);
-        nodes.clear();
-        nodes.addAll(extractNodes(lines));
+    private WorkerProtocol.Response loadCircuit(WorkerProtocol.Command.LoadCircuit command) {
+        String[] lines = command.netlistLines().toArray(String[]::new);
+        nodeNames.clear();
+        if (command.nodeNames().isEmpty()) {
+            nodeNames.addAll(extractNodes(lines));
+        } else {
+            nodeNames.addAll(command.nodeNames());
+        }
+        branchComponents.clear();
+        branchComponents.addAll(command.branchComponents());
         int code = NgspiceLibrary.ngSpice_Circ(lines);
         if (code != 0) {
             return new WorkerProtocol.Response.Error("ngSpice_Circ failed with code " + code);
@@ -93,29 +101,30 @@ public final class NgspiceWorker {
             return new WorkerProtocol.Response.Error("ngSpice_Command op failed with code " + code);
         }
 
-        Map<String, Double> nodeVoltages = new LinkedHashMap<>();
-        for (String node : nodes) {
-            readVector(node).ifPresent(value -> nodeVoltages.put(node, value));
-        }
-
         Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
-        return new WorkerProtocol.Response.ResultOp(new OperatingPointResult(
-                nodeVoltages, Map.of(), nodeVoltages.size() == nodes.size(), elapsed));
+        OperatingPointResult result = VectorExtractor.extractDcOp(nodeNames, branchComponents, elapsed);
+        return new WorkerProtocol.Response.ResultOp(result);
     }
 
-    private OptionalDouble readVector(String name) {
-        String plot = NgspiceLibrary.ngSpice_CurPlot();
-        String[] candidates = plot == null || plot.isBlank()
-                ? new String[] {name, "v(" + name + ")"}
-                : new String[] {name, "v(" + name + ")", plot + "." + name, plot + ".v(" + name + ")"};
-        for (String candidate : candidates) {
-            Pointer pointer = NgspiceLibrary.ngGet_Vec_Info(candidate);
-            if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
-                continue;
-            }
-            return OptionalDouble.of(NgspiceVectorInfo.firstRealValue(pointer));
+    private WorkerProtocol.Response alter(String componentId, ComponentValue newValue) {
+        String command = alterCommand(componentId, newValue);
+        int code = NgspiceLibrary.ngSpice_Command(command);
+        if (code != 0) {
+            return new WorkerProtocol.Response.Error("ngSpice_Command " + command + " failed with code " + code);
         }
-        return OptionalDouble.empty();
+        return new WorkerProtocol.Response.Ok();
+    }
+
+    static String alterCommand(String componentId, ComponentValue newValue) {
+        String id = componentId.toLowerCase(Locale.ROOT);
+        return switch (newValue) {
+            case ComponentValue.Resistance value -> "alter " + id + " " + value.ohms();
+            case ComponentValue.Capacitance value -> "alter " + id + " " + value.farads();
+            case ComponentValue.Inductance value -> "alter " + id + " " + value.henries();
+            case ComponentValue.DCVoltage value -> "alter " + id + " dc=" + value.volts();
+            case ComponentValue.DCCurrent value -> "alter " + id + " dc=" + value.amps();
+            default -> throw new UnsupportedOperationException("alter not supported for " + newValue.getClass().getSimpleName());
+        };
     }
 
     static Set<String> extractNodes(String[] lines) {

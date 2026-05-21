@@ -48,6 +48,16 @@ class WorkerProtocolTest {
     }
 
     @Test
+    void alterCommandUsesDocumentedDcSourceSyntax() {
+        assertEquals(
+                "alter v1 dc=5.0",
+                NgspiceWorker.alterCommand("V1", new ComponentValue.DCVoltage(5.0)));
+        assertEquals(
+                "alter i1 dc=0.001",
+                NgspiceWorker.alterCommand("I1", new ComponentValue.DCCurrent(0.001)));
+    }
+
+    @Test
     void extractsAllDeviceTerminalNodes() {
         Set<String> nodes = NgspiceWorker.extractNodes(new String[] {
             "* device coverage",

@@ -23,7 +23,7 @@ public final class NgspiceExtension implements BeforeAllCallback, BeforeEachCall
 
     @Override
     public void beforeEach(ExtensionContext context) {
-        if (context.getTags().contains("intg")) {
+        if (context.getTags().contains("intg") || context.getTags().contains("oracle")) {
             Boolean present = store(context).get(PRESENT_KEY, Boolean.class);
             assumeTrue(Boolean.TRUE.equals(present), "ngspice native library is not available");
         }

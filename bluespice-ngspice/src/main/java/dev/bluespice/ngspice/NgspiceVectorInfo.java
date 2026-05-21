@@ -32,6 +32,15 @@ public final class NgspiceVectorInfo extends Structure {
 
     public static double firstRealValue(Pointer vectorInfo) {
         Objects.requireNonNull(vectorInfo, "vectorInfo");
+        double[] values = realValues(vectorInfo);
+        if (values.length == 0) {
+            throw new IllegalStateException("ngspice vector has no real data");
+        }
+        return values[0];
+    }
+
+    public static double[] realValues(Pointer vectorInfo) {
+        Objects.requireNonNull(vectorInfo, "vectorInfo");
         ensureSupportedAbi();
 
         // JNA Structure.read() crashed forked JMH JVMs when repeatedly reading pvector_info.
@@ -42,7 +51,7 @@ public final class NgspiceVectorInfo extends Structure {
         if (realData == null || length == 0) {
             throw new IllegalStateException("ngspice vector has no real data");
         }
-        return realData.getDouble(0);
+        return realData.getDoubleArray(0, length);
     }
 
     private static void ensureSupportedAbi() {

@@ -10,7 +10,9 @@ import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public final class WorkerProtocol {
     private static final ObjectMapper MAPPER = new ObjectMapper()
@@ -63,7 +65,21 @@ public final class WorkerProtocol {
             @JsonSubTypes.Type(value = Command.Exit.class, name = "EXIT")
     })
     public sealed interface Command {
-        record LoadCircuit(String netlist) implements Command {}
+        record LoadCircuit(
+                List<String> netlistLines,
+                List<String> nodeNames,
+                List<String> branchComponents
+        ) implements Command {
+            public LoadCircuit {
+                netlistLines = List.copyOf(Objects.requireNonNull(netlistLines, "netlistLines"));
+                nodeNames = List.copyOf(Objects.requireNonNull(nodeNames, "nodeNames"));
+                branchComponents = List.copyOf(Objects.requireNonNull(branchComponents, "branchComponents"));
+            }
+
+            public LoadCircuit(String netlist) {
+                this(netlist.lines().toList(), List.of(), List.of());
+            }
+        }
 
         record RunOperatingPoint() implements Command {}
 

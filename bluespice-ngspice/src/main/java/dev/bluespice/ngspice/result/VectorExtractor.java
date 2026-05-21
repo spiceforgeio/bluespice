@@ -1,0 +1,86 @@
+package dev.bluespice.ngspice.result;
+
+import com.sun.jna.Pointer;
+import dev.bluespice.core.sim.OperatingPointResult;
+import dev.bluespice.ngspice.NgspiceLibrary;
+import dev.bluespice.ngspice.NgspiceVectorInfo;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.OptionalDouble;
+
+public final class VectorExtractor {
+    private VectorExtractor() {}
+
+    public static double readScalar(String vectorName) {
+        return findVector(vectorName)
+                .orElseThrow(() -> new IllegalStateException("missing ngspice vector: " + vectorName));
+    }
+
+    public static double[] readArray(String vectorName) {
+        Pointer pointer = findVectorPointer(vectorName);
+        if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
+            throw new IllegalStateException("missing ngspice vector: " + vectorName);
+        }
+        return NgspiceVectorInfo.realValues(pointer);
+    }
+
+    public static OperatingPointResult extractDcOp(
+            List<String> nodeNames,
+            List<String> branchComponentIds,
+            Duration solveTime) {
+        Objects.requireNonNull(nodeNames, "nodeNames");
+        Objects.requireNonNull(branchComponentIds, "branchComponentIds");
+        Objects.requireNonNull(solveTime, "solveTime");
+
+        Map<String, Double> nodeVoltages = new LinkedHashMap<>();
+        boolean complete = true;
+        for (String nodeName : nodeNames) {
+            OptionalDouble value = findVector("v(" + nodeName + ")");
+            if (value.isPresent()) {
+                nodeVoltages.put(nodeName, value.getAsDouble());
+            } else {
+                complete = false;
+            }
+        }
+
+        Map<String, Double> branchCurrents = new LinkedHashMap<>();
+        for (String componentId : branchComponentIds) {
+            OptionalDouble value = findVector(componentId + "#branch");
+            if (value.isPresent()) {
+                branchCurrents.put(componentId, value.getAsDouble());
+            } else {
+                complete = false;
+            }
+        }
+
+        return new OperatingPointResult(nodeVoltages, branchCurrents, complete, solveTime);
+    }
+
+    private static OptionalDouble findVector(String vectorName) {
+        Pointer pointer = findVectorPointer(vectorName);
+        if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
+            return OptionalDouble.empty();
+        }
+        return OptionalDouble.of(NgspiceVectorInfo.firstRealValue(pointer));
+    }
+
+    private static Pointer findVectorPointer(String vectorName) {
+        Objects.requireNonNull(vectorName, "vectorName");
+        String plot = NgspiceLibrary.ngSpice_CurPlot();
+        String lower = vectorName.toLowerCase(Locale.ROOT);
+        String[] candidates = plot == null || plot.isBlank()
+                ? new String[] {vectorName, lower}
+                : new String[] {vectorName, lower, plot + "." + vectorName, plot + "." + lower};
+        for (String candidate : candidates) {
+            Pointer pointer = NgspiceLibrary.ngGet_Vec_Info(candidate);
+            if (pointer != null && Pointer.nativeValue(pointer) != 0L) {
+                return pointer;
+            }
+        }
+        return null;
+    }
+}

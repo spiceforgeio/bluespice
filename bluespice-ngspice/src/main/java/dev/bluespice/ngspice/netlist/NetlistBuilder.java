@@ -6,12 +6,29 @@ import dev.bluespice.core.circuit.ComponentType;
 import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.circuit.Node;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
 public final class NetlistBuilder {
+    public record BuiltNetlist(List<String> lines, List<String> nodeNames, List<String> branchComponents) {
+        public BuiltNetlist {
+            lines = List.copyOf(Objects.requireNonNull(lines, "lines"));
+            nodeNames = List.copyOf(Objects.requireNonNull(nodeNames, "nodeNames"));
+            branchComponents = List.copyOf(Objects.requireNonNull(branchComponents, "branchComponents"));
+        }
+
+        public String text() {
+            return String.join(System.lineSeparator(), lines) + System.lineSeparator();
+        }
+    }
+
     public String build(Circuit circuit) {
+        return buildDetailed(circuit).text();
+    }
+
+    public BuiltNetlist buildDetailed(Circuit circuit) {
         Objects.requireNonNull(circuit, "circuit");
         NodeNumbering numbering = NodeNumbering.from(circuit);
         List<String> modelLines = new ArrayList<>();
@@ -31,7 +48,7 @@ public final class NetlistBuilder {
         lines.addAll(modelLines);
         lines.addAll(elementLines);
         lines.add(".end");
-        return String.join(System.lineSeparator(), lines) + System.lineSeparator();
+        return new BuiltNetlist(lines, nodeNames(circuit.nodes(), numbering), branchComponents(circuit.components()));
     }
 
     private String elementLine(Component component, NodeNumbering numbering) {
@@ -96,6 +113,46 @@ public final class NetlistBuilder {
     private static String prefix(Component component, String prefix) {
         String id = component.id();
         return id.startsWith(prefix) ? id : prefix + id;
+    }
+
+    public static String spiceElementId(Component component) {
+        return switch (component.type()) {
+            case RESISTOR -> prefix(component, "R");
+            case CAPACITOR -> prefix(component, "C");
+            case INDUCTOR -> prefix(component, "L");
+            case VOLTAGE_SOURCE -> prefix(component, "V");
+            case CURRENT_SOURCE -> prefix(component, "I");
+            case DIODE -> prefix(component, "D");
+            case BJT_NPN, BJT_PNP -> prefix(component, "Q");
+            case NMOS, PMOS -> prefix(component, "M");
+            case SWITCH -> prefix(component, "S");
+            case VCVS -> prefix(component, "E");
+            case VCCS -> prefix(component, "G");
+            case CCVS -> prefix(component, "H");
+            case CCCS -> prefix(component, "F");
+            case TRANSMISSION_LINE -> prefix(component, "T");
+            case XSPICE_BLOCK -> prefix(component, "A");
+        };
+    }
+
+    private static List<String> nodeNames(Collection<Node> nodes, NodeNumbering numbering) {
+        List<String> names = new ArrayList<>();
+        for (Node node : nodes) {
+            if (!node.isGround()) {
+                names.add(numbering.spiceName(node));
+            }
+        }
+        return names;
+    }
+
+    private static List<String> branchComponents(Collection<Component> components) {
+        List<String> names = new ArrayList<>();
+        for (Component component : components) {
+            if (component.type() == ComponentType.VOLTAGE_SOURCE || component.type() == ComponentType.INDUCTOR) {
+                names.add(spiceElementId(component));
+            }
+        }
+        return names;
     }
 
     private static String twoTerminal(Component component, NodeNumbering numbering) {

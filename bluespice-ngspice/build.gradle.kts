@@ -7,6 +7,7 @@ dependencies {
 
     testImplementation(project(":bluespice-test-common"))
     testImplementation(libs.junit.api)
+    testImplementation(libs.junit.params)
     testRuntimeOnly(libs.junit.engine)
 }
 
