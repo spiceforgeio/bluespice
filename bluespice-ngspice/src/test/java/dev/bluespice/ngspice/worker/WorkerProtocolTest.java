@@ -1,0 +1,62 @@
+package dev.bluespice.ngspice.worker;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+
+import dev.bluespice.core.circuit.ComponentValue;
+import dev.bluespice.core.sim.OperatingPointResult;
+import dev.bluespice.core.sim.TransientConfig;
+import dev.bluespice.core.sim.TransientResult;
+import java.time.Duration;
+import java.util.Map;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+@Tag("unit")
+class WorkerProtocolTest {
+    @Test
+    void serializesEveryCommandType() {
+        roundTripCommand(new WorkerProtocol.Command.LoadCircuit("* test\n.end\n"));
+        roundTripCommand(new WorkerProtocol.Command.RunOperatingPoint());
+        roundTripCommand(new WorkerProtocol.Command.RunTransient(TransientConfig.oneTick(0.05)));
+        roundTripCommand(new WorkerProtocol.Command.Alter("R1", new ComponentValue.Resistance(220.0)));
+        roundTripCommand(new WorkerProtocol.Command.GetVector("vout"));
+        roundTripCommand(new WorkerProtocol.Command.BgHalt());
+        roundTripCommand(new WorkerProtocol.Command.Exit());
+    }
+
+    @Test
+    void serializesEveryResponseType() {
+        roundTripResponse(new WorkerProtocol.Response.Ok());
+        roundTripResponse(new WorkerProtocol.Response.Error("failed"));
+        roundTripResponse(new WorkerProtocol.Response.ResultOp(new OperatingPointResult(
+                Map.of("vout", 2.5), Map.of("V1", 0.01), true, Duration.ofMillis(2))));
+        roundTripResponse(new WorkerProtocol.Response.ResultTran(new TransientResult(
+                new double[] {0.0, 1.0},
+                Map.of("vout", new double[] {0.0, 2.5}),
+                Map.of("V1", new double[] {0.0, 0.01}),
+                true,
+                Duration.ofMillis(3))));
+
+        var vector = roundTripResponse(new WorkerProtocol.Response.Vector(
+                "vout", new double[] {1.0, 2.0}, Map.of("units", "V")));
+        var decoded = assertInstanceOf(WorkerProtocol.Response.Vector.class, vector);
+        assertArrayEquals(new double[] {1.0, 2.0}, decoded.values());
+        assertEquals(Map.of("units", "V"), decoded.metadata());
+    }
+
+    private WorkerProtocol.Command roundTripCommand(WorkerProtocol.Command command) {
+        WorkerProtocol.Command decoded =
+                WorkerProtocol.deserializeCommand(WorkerProtocol.serializeCommand(command));
+        assertEquals(command, decoded);
+        return decoded;
+    }
+
+    private WorkerProtocol.Response roundTripResponse(WorkerProtocol.Response response) {
+        WorkerProtocol.Response decoded =
+                WorkerProtocol.deserializeResponse(WorkerProtocol.serializeResponse(response));
+        assertEquals(response.getClass(), decoded.getClass());
+        return decoded;
+    }
+}

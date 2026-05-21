@@ -1,0 +1,24 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = "bluespice"
+
+include(
+    "bluespice-core",
+    "bluespice-ngspice",
+    "bluespice-test-common",
+    "bluespice-benchmarks",
+    "bluespice-examples",
+    "bluespice-fabric",
+)

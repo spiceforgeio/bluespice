@@ -1,0 +1,16 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO: oracle validation"
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO: benchmarks"
