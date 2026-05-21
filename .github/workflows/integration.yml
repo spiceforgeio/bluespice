@@ -13,5 +13,19 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - run: echo "TODO: restore cached ngspice build or build from source"
-      - run: ./gradlew test -Ptags=intg
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential bison flex libtool automake autoconf pkg-config
+      - name: Cache ngspice
+        uses: actions/cache@v4
+        with:
+          path: /opt/ngspice
+          key: ngspice-${{ runner.os }}-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-linux.sh') }}
+      - name: Build ngspice shared library
+        run: |
+          source ./gradle.properties
+          sudo env \
+            NGSPICE_VERSION="$ngspiceVersion" \
+            NGSPICE_SOURCE_URL="$ngspiceSourceUrl" \
+            NGSPICE_SHA256="$ngspiceSha256" \
+            ./gradle/native-build/build-ngspice-linux.sh
+      - run: ./gradlew test -Ptags=intg -Djna.library.path=/opt/ngspice/lib -Djava.library.path=/opt/ngspice/lib

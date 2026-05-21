@@ -22,7 +22,7 @@ public final class NgspiceEngine implements SimulationEngine {
 
     @Override
     public SimulationSession openSession(Circuit circuit) {
-        throw new UnsupportedOperationException("ngspice backend is implemented in Phase 2");
+        throw new UnsupportedOperationException("NgspiceEngine.openSession() will be wired to WorkerChannel in Phase 3");
     }
 
     @Override

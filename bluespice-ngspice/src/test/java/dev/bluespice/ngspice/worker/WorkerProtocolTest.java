@@ -10,6 +10,7 @@ import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +45,30 @@ class WorkerProtocolTest {
         var decoded = assertInstanceOf(WorkerProtocol.Response.Vector.class, vector);
         assertArrayEquals(new double[] {1.0, 2.0}, decoded.values());
         assertEquals(Map.of("units", "V"), decoded.metadata());
+    }
+
+    @Test
+    void extractsAllDeviceTerminalNodes() {
+        Set<String> nodes = NgspiceWorker.extractNodes(new String[] {
+            "* device coverage",
+            "V1 vin 0 DC 5",
+            "R1 vin vout 1k",
+            "Q1 collector base emitter NPNMODEL",
+            "M1 drain gate source bulk NMOSMODEL",
+            ".model NPNMODEL NPN",
+            ".end"
+        });
+
+        assertEquals(Set.of(
+                "vin",
+                "vout",
+                "collector",
+                "base",
+                "emitter",
+                "drain",
+                "gate",
+                "source",
+                "bulk"), nodes);
     }
 
     private WorkerProtocol.Command roundTripCommand(WorkerProtocol.Command command) {

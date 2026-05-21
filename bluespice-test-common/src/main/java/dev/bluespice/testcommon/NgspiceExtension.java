@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
@@ -41,7 +42,12 @@ public final class NgspiceExtension implements BeforeAllCallback, BeforeEachCall
 
     private boolean isNgspicePresent() {
         String libraryFile = System.mapLibraryName("ngspice");
-        return Arrays.stream(System.getProperty("java.library.path", "").split(System.getProperty("path.separator")))
+        return Stream.of(
+                        System.getProperty("java.library.path", ""),
+                        System.getProperty("jna.library.path", ""),
+                        System.getProperty("bluespice.ngspice.library.path", ""))
+                .flatMap(paths -> Arrays.stream(paths.split(System.getProperty("path.separator"))))
+                .filter(path -> !path.isBlank())
                 .map(Path::of)
                 .map(path -> path.resolve(libraryFile))
                 .anyMatch(Files::isRegularFile);

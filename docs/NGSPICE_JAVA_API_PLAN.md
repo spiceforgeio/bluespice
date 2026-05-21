@@ -569,7 +569,7 @@ Otherwise:
     → JNA Direct mapping is sufficient; no action required
 ```
 
-The benchmark result is committed in Phase 2 and the decision is recorded in this document.
+The Phase 2 benchmark selected JNA Direct. No JNI wrapper is required before Phase 3.
 
 ### 6.2 Key ngspice shared library functions
 
@@ -1107,7 +1107,7 @@ GPU acceleration is not a viable near-term path. The recommended approach is:
 
 ```bash
 ./configure \
-  --with-ngspice-shared \
+  --with-ngshared \
   --enable-xspice \
   --enable-cider \
   --enable-openmp \
@@ -1118,7 +1118,7 @@ make install
 ```
 
 Key configure flags:
-- `--with-ngspice-shared`: Build `libngspice.so` (required)
+- `--with-ngshared`: Build `libngspice.so` (required)
 - `--enable-xspice`: Include the XSPICE event-driven extensions (useful for digital/mixed-signal)
 - `--enable-cider`: Include the CIDER numerical device simulator (optional; increases binary size)
 - `--enable-openmp`: Enable OpenMP parallelism
@@ -1133,7 +1133,7 @@ Use the MSYS2/MinGW-w64 toolchain:
 ```bash
 # In MSYS2 MinGW64 shell
 ./configure \
-  --with-ngspice-shared \
+  --with-ngshared \
   --enable-xspice \
   --enable-openmp \
   --host=x86_64-w64-mingw32 \
@@ -1150,7 +1150,7 @@ Alternatively, use the CMake-based build (available in newer ngspice versions) w
 
 ```bash
 ./configure \
-  --with-ngspice-shared \
+  --with-ngshared \
   --enable-xspice \
   --prefix=/opt/ngspice-mac
 make -j$(nproc)
@@ -1508,8 +1508,8 @@ class NgspiceDcOpTest {
     @Test
     void voltageAtOutputNode_matchesAnalytical() {
         OperatingPointResult r = session.runOperatingPoint();
-        // Analytical: Vout = V * R2 / (R1 + R2) = 5 * 1000 / 2000 = 2.5 V
-        assertVoltageNear(r, "vout", 2.5, tolerancePct(1.0));
+        // Analytical DC operating point: capacitor is open, so vout = vin = 5.0 V
+        assertVoltageNear(r, "vout", 5.0, tolerancePct(1.0));
     }
 }
 ```
@@ -1727,7 +1727,7 @@ Coverage is measured with JaCoCo. Native code inside the worker process is exclu
 
 **Goal:** Demonstrates that Java can call ngspice via JNA and get a result. Establishes the worker-process model. **Produces the binding-overhead benchmark result that determines whether JNA Direct is sufficient or a JNI thin wrapper is needed.**
 
-- Build ngspice from source with `--with-ngspice-shared --enable-xspice` on Linux; cache in CI
+- Build ngspice from source with `--with-ngshared --enable-xspice` on Linux; cache in CI
 - `NgspiceLibrary` using JNA **Direct mapping** (not interface mapping) declared from `sharedspice.h`
 - `NgspiceCallbacks` — `SendChar` and `ControlledExit` implementations
 - `NgspiceWorker` main class: reads commands from stdin, calls ngspice, writes responses to stdout
@@ -1736,11 +1736,11 @@ Coverage is measured with JaCoCo. Native code inside the worker process is exclu
 
 **Tests written in this phase:**
 - `NgspiceLibraryTest` `@Tag("intg")` — `ngSpice_Init` succeeds, `ControlledExit` does not kill JVM
-- `WorkerProcessTest` `@Tag("intg")` — launch worker, load hard-coded RC, `RUN_OP`, assert `vout` ≈ 2.5 V
+- `WorkerProcessTest` `@Tag("intg")` — launch worker, load hard-coded RC, `RUN_OP`, assert `vout` ≈ 5.0 V
 - Oracle baseline: run same circuit via `SubprocessEngine`; assert result matches within 0.1 %
 
 **Benchmarks run in this phase (Group 0 from §14):**
-- `JnaInterfaceCallOverhead` vs `JnaDirectCallOverhead` vs `JniCallOverhead`
+- `JnaInterfaceCallOverhead` vs `JnaDirectCallOverhead`; `JniCallOverhead` not required because JNA Direct passed the decision gate
 - `OverheadFractionDcOp_rcSmall` and `OverheadFractionDcOp_50nodes`
 - Results committed to `benchmarks/BINDING_DECISION.md`
 
