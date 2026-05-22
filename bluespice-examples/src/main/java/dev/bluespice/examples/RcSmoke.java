@@ -17,7 +17,7 @@ public final class RcSmoke {
                 EngineConfig.defaults().simulationTimeout(),
                 false);
         try (NgspiceEngine engine = NgspiceEngine.load(config);
-                var session = engine.openSession(Circuits.rcFilter())) {
+                var session = engine.openSession(Circuits.voltageDivider())) {
             var result = session.runOperatingPoint();
             result.nodeVoltages().forEach((node, voltage) ->
                     System.out.printf("v(%s) = %.6f V%n", node, voltage));

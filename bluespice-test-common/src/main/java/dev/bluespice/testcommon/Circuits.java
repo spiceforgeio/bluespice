@@ -37,7 +37,7 @@ public final class Circuits {
         Node vin = circuit.addNode("vin");
         Node vmid = circuit.addNode("vmid");
         circuit.addComponent(VOLTAGE_SOURCE, "V1", new ComponentValue.DCVoltage(10.0), vin, circuit.ground());
-        circuit.addComponent(RESISTOR, "R1", new ComponentValue.Resistance(1000.0), vin, vmid);
+        circuit.addComponent(RESISTOR, "R1", new ComponentValue.Resistance(500.0), vin, vmid);
         circuit.addComponent(RESISTOR, "R2", new ComponentValue.Resistance(1000.0), vmid, circuit.ground());
         return circuit;
     }
