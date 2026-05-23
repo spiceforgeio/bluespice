@@ -69,7 +69,7 @@ class WorkerProtocolTest {
         params.put("IS", 2.52E-9);
         params.put("N", 1.752);
         assertEquals(
-                List.of("altermod D1N4148 IS=2.52E-9", "altermod D1N4148 N=1.752"),
+                List.of("altermod d1n4148 IS=2.52E-9", "altermod d1n4148 N=1.752"),
                 NgspiceWorker.alterCommands("D1N4148", new ComponentValue.ModelRef("D1N4148", params)));
     }
 

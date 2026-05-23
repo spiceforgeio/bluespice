@@ -137,7 +137,7 @@ public final class NgspiceWorker {
             case ComponentValue.SwitchState value -> List.of("alter " + id + " dc="
                     + (value.closed() ? value.ron() : value.roff()));
             case ComponentValue.ModelRef value -> value.params().entrySet().stream()
-                    .map(entry -> "altermod " + componentId + " " + entry.getKey() + "=" + entry.getValue())
+                    .map(entry -> "altermod " + id + " " + entry.getKey() + "=" + entry.getValue())
                     .toList();
             default -> throw new UnsupportedOperationException("alter not supported for " + newValue.getClass().getSimpleName());
         };

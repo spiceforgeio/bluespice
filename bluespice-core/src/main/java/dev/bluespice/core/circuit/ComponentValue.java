@@ -52,6 +52,13 @@ public sealed interface ComponentValue {
         }
     }
 
+    /**
+     * Switch state for the current ngspice fast path.
+     *
+     * <p>The {@code ron} value is the control voltage applied to close the switch, and
+     * {@code roff} is the control voltage applied to open it. These values are control
+     * source levels, not ngspice switch model resistance parameters.
+     */
     record SwitchState(boolean closed, double ron, double roff) implements ComponentValue {
         public SwitchState {
             requirePositive(ron, "ron");
