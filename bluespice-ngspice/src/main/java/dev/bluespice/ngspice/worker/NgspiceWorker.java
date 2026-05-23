@@ -24,12 +24,19 @@ import java.util.Map;
 import java.util.Set;
 
 public final class NgspiceWorker {
+    private final boolean detachOnExit;
     private final WorkerCallbacks callbacks = new WorkerCallbacks();
     private final List<String> nodeNames = new ArrayList<>();
     private final List<String> branchComponents = new ArrayList<>();
     private ActiveTransient activeTransient;
 
-    private NgspiceWorker() {}
+    NgspiceWorker() {
+        this(false);
+    }
+
+    NgspiceWorker(boolean detachOnExit) {
+        this.detachOnExit = detachOnExit;
+    }
 
     public static void main(String[] args) throws IOException {
         String libraryPath = System.getProperty("jna.library.path");
@@ -40,17 +47,7 @@ public final class NgspiceWorker {
     }
 
     private void run() throws IOException {
-        int initCode = NgspiceLibrary.ngSpice_Init(
-                callbacks.sendChar,
-                callbacks.sendStat,
-                callbacks.controlledExit,
-                callbacks.sendData,
-                callbacks.sendInitData,
-                callbacks.bgThreadRunning,
-                null);
-        if (initCode != 0) {
-            throw new IllegalStateException("ngSpice_Init failed with code " + initCode);
-        }
+        initialize();
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8))) {
@@ -75,10 +72,24 @@ public final class NgspiceWorker {
         }
     }
 
+    void initialize() {
+        int initCode = NgspiceLibrary.ngSpice_Init(
+                callbacks.sendChar,
+                callbacks.sendStat,
+                callbacks.controlledExit,
+                callbacks.sendData,
+                callbacks.sendInitData,
+                callbacks.bgThreadRunning,
+                null);
+        if (initCode != 0) {
+            throw new IllegalStateException("ngSpice_Init failed with code " + initCode);
+        }
+    }
+
     private boolean pollActiveTransient(BufferedReader reader, BufferedWriter writer) throws IOException {
-        if (!callbacks.isBgRunning()) {
-            writeResponse(writer, finishActiveTransient());
-            activeTransient = null;
+        WorkerProtocol.Response finished = finishActiveTransientIfDone();
+        if (finished != null) {
+            writeResponse(writer, finished);
             return false;
         }
         if (reader.ready()) {
@@ -97,27 +108,71 @@ public final class NgspiceWorker {
         return false;
     }
 
+    boolean hasActiveTransient() {
+        return activeTransient != null;
+    }
+
+    void waitForActiveTransient(long millis) {
+        callbacks.waitForBgThreadStop(millis);
+    }
+
+    WorkerProtocol.Response finishActiveTransientIfDone() {
+        if (activeTransient == null || callbacks.isBgRunning()) {
+            return null;
+        }
+        WorkerProtocol.Response response = finishActiveTransient();
+        activeTransient = null;
+        return response;
+    }
+
     private void writeResponse(BufferedWriter writer, WorkerProtocol.Response response) throws IOException {
         writer.write(WorkerProtocol.serializeResponse(response));
         writer.newLine();
         writer.flush();
     }
 
-    private WorkerProtocol.Response handle(WorkerProtocol.Command command) {
+    WorkerProtocol.Response handle(WorkerProtocol.Command command) {
         try {
             return switch (command) {
                 case WorkerProtocol.Command.LoadCircuit loadCircuit -> loadCircuit(loadCircuit);
                 case WorkerProtocol.Command.RunOperatingPoint ignored -> runOperatingPoint();
                 case WorkerProtocol.Command.RunTransient runTransient -> runTransient(runTransient);
                 case WorkerProtocol.Command.Alter alter -> alter(alter.componentId(), alter.newValue());
+                case WorkerProtocol.Command.Reset ignored -> reset();
                 case WorkerProtocol.Command.BgHalt ignored -> bgHalt();
-                case WorkerProtocol.Command.Exit ignored -> new WorkerProtocol.Response.Ok();
+                case WorkerProtocol.Command.Exit ignored -> exit();
                 default -> new WorkerProtocol.Response.Error("command not implemented yet: "
                         + command.getClass().getSimpleName());
             };
         } catch (RuntimeException e) {
             return new WorkerProtocol.Response.Error(e.getMessage());
         }
+    }
+
+    private WorkerProtocol.Response reset() {
+        if (activeTransient != null) {
+            return new WorkerProtocol.Response.Error("cannot reset while transient is running");
+        }
+        int code = NgspiceLibrary.ngSpice_Command("reset");
+        if (code != 0) {
+            return new WorkerProtocol.Response.Error("ngSpice_Command reset failed with code " + code);
+        }
+        nodeNames.clear();
+        branchComponents.clear();
+        return new WorkerProtocol.Response.Ok();
+    }
+
+    private WorkerProtocol.Response exit() {
+        if (activeTransient != null) {
+            NgspiceLibrary.ngSpice_Command("bg_halt");
+            callbacks.markBgStopped();
+            activeTransient = null;
+        }
+        NgspiceLibrary.ngSpice_Command("reset");
+        if (detachOnExit) {
+            NgspiceLibrary.ngSpice_Command("quit");
+        }
+        return new WorkerProtocol.Response.Ok();
     }
 
     private WorkerProtocol.Response loadCircuit(WorkerProtocol.Command.LoadCircuit command) {
@@ -177,6 +232,7 @@ public final class NgspiceWorker {
         if (activeTransient == null) {
             return null;
         }
+        waitForTransientData(Duration.ofMillis(250));
         activeTransient.cancelled = true;
         int code = NgspiceLibrary.ngSpice_Command("bg_halt");
         if (code != 0) {
@@ -184,6 +240,15 @@ public final class NgspiceWorker {
         }
         callbacks.markBgStopped();
         return null;
+    }
+
+    private void waitForTransientData(Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (callbacks.isBgRunning()
+                && VectorExtractor.findLastValue("time").isEmpty()
+                && System.nanoTime() < deadline) {
+            callbacks.waitForBgThreadStop(5);
+        }
     }
 
     private WorkerProtocol.Response finishActiveTransient() {

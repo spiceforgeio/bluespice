@@ -26,6 +26,7 @@ class WorkerProtocolTest {
         roundTripCommand(new WorkerProtocol.Command.RunTransient(TransientConfig.oneTick(0.05)));
         roundTripCommand(new WorkerProtocol.Command.Alter("R1", new ComponentValue.Resistance(220.0)));
         roundTripCommand(new WorkerProtocol.Command.GetVector("vout"));
+        roundTripCommand(new WorkerProtocol.Command.Reset());
         roundTripCommand(new WorkerProtocol.Command.BgHalt());
         roundTripCommand(new WorkerProtocol.Command.Exit());
     }

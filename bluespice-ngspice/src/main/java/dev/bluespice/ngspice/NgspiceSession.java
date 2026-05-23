@@ -131,6 +131,10 @@ public final class NgspiceSession implements SimulationSession {
         return circuit;
     }
 
+    WorkerChannel worker() {
+        return worker;
+    }
+
     @Override
     public boolean isTransientRunning() {
         return transientRunning.get();

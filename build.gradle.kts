@@ -29,6 +29,9 @@ subprojects {
         useJUnitPlatform {
             includeTags(tags)
         }
+        if (tags == "intg") {
+            forkEvery = 1
+        }
         listOf("java.library.path", "jna.library.path", "bluespice.ngspice.library.path").forEach { property ->
             System.getProperty(property)?.let { systemProperty(property, it) }
         }

@@ -62,6 +62,7 @@ public final class WorkerProtocol {
             @JsonSubTypes.Type(value = Command.RunTransient.class, name = "RUN_TRAN"),
             @JsonSubTypes.Type(value = Command.Alter.class, name = "ALTER"),
             @JsonSubTypes.Type(value = Command.GetVector.class, name = "GET_VECTOR"),
+            @JsonSubTypes.Type(value = Command.Reset.class, name = "RESET"),
             @JsonSubTypes.Type(value = Command.BgHalt.class, name = "BG_HALT"),
             @JsonSubTypes.Type(value = Command.Exit.class, name = "EXIT")
     })
@@ -93,6 +94,8 @@ public final class WorkerProtocol {
         record Alter(String componentId, ComponentValue newValue) implements Command {}
 
         record GetVector(String name) implements Command {}
+
+        record Reset() implements Command {}
 
         record BgHalt() implements Command {}
 

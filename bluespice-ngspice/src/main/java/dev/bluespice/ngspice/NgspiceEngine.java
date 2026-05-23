@@ -1,6 +1,7 @@
 package dev.bluespice.ngspice;
 
 import dev.bluespice.core.circuit.Circuit;
+import dev.bluespice.core.exception.WorkerCrashException;
 import dev.bluespice.core.sim.EngineConfig;
 import dev.bluespice.core.sim.SimulationEngine;
 import dev.bluespice.ngspice.netlist.NetlistBuilder;
@@ -34,7 +35,13 @@ public final class NgspiceEngine implements SimulationEngine {
     @Override
     public NgspiceSession openSession(Circuit circuit) {
         Objects.requireNonNull(circuit, "circuit");
-        WorkerChannel worker = workerPool.acquire();
+        WorkerChannel worker;
+        try {
+            worker = workerPool.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new WorkerCrashException("interrupted while waiting for ngspice worker", e);
+        }
         try {
             NetlistBuilder.BuiltNetlist netlist = netlistBuilder.buildDetailed(circuit);
             WorkerProtocol.Response response = worker.send(new WorkerProtocol.Command.LoadCircuit(

@@ -15,16 +15,24 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-public final class WorkerChannel implements AutoCloseable {
+public class WorkerChannel implements AutoCloseable {
     private final EngineConfig config;
+    private final WorkerPool pool;
     private volatile Process process;
     private volatile BufferedWriter writer;
     private volatile BufferedReader reader;
     private final Object writeLock = new Object();
     private final Object readLock = new Object();
+    private final Object recoveryLock = new Object();
+    private volatile boolean crashed;
 
     public WorkerChannel(EngineConfig config) {
+        this(config, null);
+    }
+
+    WorkerChannel(EngineConfig config, WorkerPool pool) {
         this.config = Objects.requireNonNull(config, "config");
+        this.pool = pool;
     }
 
     public synchronized void start() {
@@ -44,22 +52,34 @@ public final class WorkerChannel implements AutoCloseable {
 
     public WorkerProtocol.Response send(WorkerProtocol.Command command) {
         Objects.requireNonNull(command, "command");
-        writeCommand(command);
+        try {
+            writeCommand(command);
+        } catch (WorkerCrashException e) {
+            throw recoverAndThrow(e, failedProcess(e));
+        }
+        Process responseProcess = process;
         synchronized (readLock) {
             try {
                 String response = reader.readLine();
                 if (response == null) {
-                    throw new WorkerCrashException("ngspice worker terminated before sending a response");
+                    throw recoverAndThrow(new WorkerCrashException(
+                            "ngspice worker terminated before sending a response"), responseProcess);
                 }
                 return WorkerProtocol.deserializeResponse(response);
             } catch (IOException e) {
-                throw new WorkerCrashException("failed to communicate with ngspice worker", e);
+                throw recoverAndThrow(
+                        new WorkerCrashException("failed to communicate with ngspice worker", e),
+                        responseProcess);
             }
         }
     }
 
     public void sendWithoutResponse(WorkerProtocol.Command command) {
-        writeCommand(command);
+        try {
+            writeCommand(command);
+        } catch (WorkerCrashException e) {
+            throw recoverAndThrow(e, failedProcess(e));
+        }
     }
 
     public boolean isAlive() {
@@ -83,7 +103,7 @@ public final class WorkerChannel implements AutoCloseable {
     public synchronized void close() {
         if (isAlive()) {
             try {
-                send(new WorkerProtocol.Command.Exit());
+                writeCommand(new WorkerProtocol.Command.Exit());
                 awaitExit(Duration.ofSeconds(2));
             } catch (RuntimeException ignored) {
                 process.destroy();
@@ -97,16 +117,74 @@ public final class WorkerChannel implements AutoCloseable {
     private void writeCommand(WorkerProtocol.Command command) {
         Objects.requireNonNull(command, "command");
         synchronized (writeLock) {
-            if (!isAlive()) {
-                throw new WorkerCrashException("ngspice worker is not running");
+            Process current = process;
+            if (current == null || !current.isAlive()) {
+                throw new DetectedWorkerCrashException("ngspice worker is not running", current);
             }
             try {
                 writer.write(WorkerProtocol.serializeCommand(command));
                 writer.newLine();
                 writer.flush();
             } catch (IOException e) {
-                throw new WorkerCrashException("failed to communicate with ngspice worker", e);
+                throw new DetectedWorkerCrashException("failed to communicate with ngspice worker", e, current);
             }
+        }
+    }
+
+    private WorkerCrashException recoverAndThrow(WorkerCrashException cause, Process failedProcess) {
+        if (pool == null) {
+            return cause;
+        }
+        synchronized (recoveryLock) {
+            if (failedProcess != null && failedProcess != process) {
+                return cause;
+            }
+            crashed = true;
+            try {
+                WorkerChannel replacement = pool.replaceDeadWorker(this);
+                adopt(replacement);
+            } finally {
+                crashed = false;
+            }
+        }
+        return cause;
+    }
+
+    private synchronized void adopt(WorkerChannel replacement) {
+        this.process = replacement.process;
+        this.writer = replacement.writer;
+        this.reader = replacement.reader;
+        replacement.process = null;
+        replacement.writer = null;
+        replacement.reader = null;
+    }
+
+    boolean crashed() {
+        return crashed;
+    }
+
+    public Process process() {
+        return process;
+    }
+
+    private Process failedProcess(WorkerCrashException exception) {
+        if (exception instanceof DetectedWorkerCrashException detected) {
+            return detected.failedProcess;
+        }
+        return process;
+    }
+
+    private static final class DetectedWorkerCrashException extends WorkerCrashException {
+        private final Process failedProcess;
+
+        private DetectedWorkerCrashException(String message, Process failedProcess) {
+            super(message);
+            this.failedProcess = failedProcess;
+        }
+
+        private DetectedWorkerCrashException(String message, Throwable cause, Process failedProcess) {
+            super(message, cause);
+            this.failedProcess = failedProcess;
         }
     }
 
