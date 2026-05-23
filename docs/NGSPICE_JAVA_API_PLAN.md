@@ -62,7 +62,16 @@ Working title: **BlueSpice**
 
 ### 2.2 Primary target use case
 
-A Minecraft mod (Fabric or Forge) where players wire resistors, capacitors, switches, batteries, and logic elements. The mod calls the library each game tick to query voltages and currents for rendering and gameplay effects. Circuits can be modified at runtime (placing/breaking wires, inserting components, toggling switches).
+A Minecraft mod (Fabric or NeoForge) where players wire resistors, capacitors, switches,
+batteries, and logic elements. The mod calls the library each game tick to query voltages
+and currents for rendering and gameplay effects. Circuits can be modified at runtime
+(placing/breaking wires, inserting components, toggling switches).
+
+BlueSpice core (`bluespice-core`, `bluespice-ngspice`) is intentionally mod-framework-agnostic.
+Fabric and NeoForge integration modules live in separate repositories and depend on the
+published Maven Central artifacts. The `bluespice-fabric` module is maintained in this
+monorepo during initial development and extracted to a standalone repository after the
+core API stabilises (Phase 11).
 
 ### 2.3 Secondary target use cases
 
@@ -1206,20 +1215,13 @@ The Windows DLL is named `ngspice.dll` (not `libngspice.dll`) by both the MSYS2/
 
 #### Fabric classloader note
 
-In a Fabric mod, native libraries must be loaded by the **system classloader** (or a classloader that is never unloaded), not by the mod classloader. `FabricNativeLoader` in `bluespice-fabric` handles this:
+In a Fabric mod, native libraries must be loaded by the **system classloader** (or a
+classloader that is never unloaded), not by the mod classloader. `FabricNativeLoader` in
+`bluespice-fabric` handles this via a reflective `Runtime.load0` call on `System.class`
+(bootstrap classloader), falling back to `System.load()` on failure.
 
-```java
-public class FabricNativeLoader {
-    public static void ensureLoaded(Path extractedLibPath) {
-        // Reflectively call System.load() on the bootstrap classloader,
-        // or use the Knot classloader's parent — whichever is the root CL.
-        // This prevents the native library from being unloaded if the mod
-        // classloader is later discarded (e.g., on hot-reload).
-        ClassLoader root = ClassLoader.getSystemClassLoader().getParent();
-        // ... reflection-based System.load() on root CL
-    }
-}
-```
+Once `bluespice-fabric` is extracted to its own repository (Phase 11), the full
+implementation details will live there. The pattern is documented here for reference only.
 
 ### 13.4 Packaging strategies
 
