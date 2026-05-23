@@ -109,6 +109,7 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p bluespice-ngspice/src/main/resources/natives/windows-x86_64
+          # MinGW names the output libngspice-0.dll; package the name BlueSpice loads.
           cp /opt/ngspice-win/bin/libngspice-0.dll /opt/ngspice-win/bin/ngspice.dll
           cp /opt/ngspice-win/bin/ngspice.dll bluespice-ngspice/src/main/resources/natives/windows-x86_64/ngspice.dll
           echo "NATIVE_LIB_DIR=$(cygpath -w /opt/ngspice-win/bin)" >> "$GITHUB_ENV"

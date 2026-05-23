@@ -26,9 +26,11 @@ rm -rf "${SRC_DIR}"
 tar -xzf "${TARBALL}" -C "${WORK_DIR}"
 
 cd "${SRC_DIR}"
+# OpenMP is disabled on macOS CI because Homebrew libomp triggered ARM64 JNA callback crashes.
 ./configure \
   --with-ngshared \
   --enable-xspice \
+  --disable-openmp \
   --prefix="${PREFIX}"
 make -j"$(sysctl -n hw.ncpu)"
 make install

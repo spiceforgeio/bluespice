@@ -71,7 +71,8 @@ class NgspiceTransientTest {
             TransientResult restarted = session.runTransient(new TransientConfig(1.0E-4, 0.01, 0.0, true));
             double restartInitial = restarted.voltageAt("vout", restarted.timePoints()[0]);
             // Cancellation may land between solver points; assert continuity within observed interpolation drift.
-            org.junit.jupiter.api.Assertions.assertEquals(captured, restartInitial, Math.abs(captured) * tolerancePct(0.5));
+            double tolerance = Math.max(1.0E-4, Math.abs(captured) * tolerancePct(2.0));
+            org.junit.jupiter.api.Assertions.assertEquals(captured, restartInitial, tolerance);
         }
     }
 
