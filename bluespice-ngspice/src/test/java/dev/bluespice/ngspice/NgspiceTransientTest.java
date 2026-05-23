@@ -13,6 +13,7 @@ import dev.bluespice.core.circuit.Circuit;
 import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.circuit.Node;
 import dev.bluespice.core.sim.EngineConfig;
+import dev.bluespice.core.sim.SimulationSession;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
 import dev.bluespice.testcommon.NgspiceExtension;
@@ -30,7 +31,7 @@ class NgspiceTransientTest {
     @Test
     void rcCharge_voltageFollowsExponential() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(rcCharge(1.0E-6))) {
+                var session = engine.openSession(rcCharge(1.0E-6))) {
             TransientResult result = session.runTransient(new TransientConfig(1.0E-5, 0.005, 0.0, false));
 
             assertVoltageAt(result, "vout", 0.001, 5.0 * (1.0 - Math.exp(-1.0)), tolerancePct(1.0));
@@ -42,7 +43,7 @@ class NgspiceTransientTest {
     @Test
     void rlcStepResponse_peakOvershoot_withinTolerance() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(rlcUnderdamped())) {
+                var session = engine.openSession(rlcUnderdamped())) {
             TransientResult result = session.runTransient(new TransientConfig(1.0E-6, 0.003, 0.0, false));
             double peak = Arrays.stream(result.nodeVoltages().get("vout")).max().orElseThrow();
             double overshoot = peak / 5.0 - 1.0;
@@ -55,7 +56,7 @@ class NgspiceTransientTest {
     @Test
     void cancelTransient_icContinuity_voltageMatchesCaptured() throws Exception {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(rcCharge(1.0E-3))) {
+                var session = engine.openSession(rcCharge(1.0E-3))) {
             CompletableFuture<TransientResult> future = CompletableFuture.supplyAsync(
                     () -> session.runTransient(new TransientConfig(1.0E-5, 5.0, 0.0, false)));
             waitUntilRunning(session);
@@ -77,7 +78,7 @@ class NgspiceTransientTest {
     @Test
     void gameLoop_100ticks_monotonicChargeRc() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(rcCharge(1.0E-6))) {
+                var session = engine.openSession(rcCharge(1.0E-6))) {
             double previous = 0.0;
             for (int i = 0; i < 100; i++) {
                 TransientResult result = session.runTransient(new TransientConfig(1.0E-6, 1.0E-4, 0.0, false));
@@ -89,7 +90,7 @@ class NgspiceTransientTest {
         }
     }
 
-    private void waitUntilRunning(NgspiceSession session) throws InterruptedException {
+    private void waitUntilRunning(SimulationSession session) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (!session.isTransientRunning() && System.nanoTime() < deadline) {
             Thread.sleep(5);

@@ -20,7 +20,7 @@ class NgspiceDcOpTest {
     @Test
     void voltageDivider_vmid_matchesAnalytical() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(Circuits.voltageDivider())) {
+                var session = engine.openSession(Circuits.voltageDivider())) {
             assertVoltageNear(
                     session.runOperatingPoint(),
                     "vmid",
@@ -32,7 +32,7 @@ class NgspiceDcOpTest {
     @Test
     void rcSteadyState_vcap_equalsSourceVoltage() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(Circuits.rcSmall())) {
+                var session = engine.openSession(Circuits.rcSmall())) {
             assertVoltageNear(
                     session.runOperatingPoint(),
                     "vout",
@@ -44,7 +44,7 @@ class NgspiceDcOpTest {
     @Test
     void currentDivider_branchCurrent_matchesAnalytical() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(Circuits.currentDivider())) {
+                var session = engine.openSession(Circuits.currentDivider())) {
             assertCurrentNear(
                     session.runOperatingPoint(),
                     "R1",
@@ -56,7 +56,7 @@ class NgspiceDcOpTest {
     @Test
     void bjtAmplifier_converges() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(Circuits.bjtAmp())) {
+                var session = engine.openSession(Circuits.bjtAmp())) {
             var result = session.runOperatingPoint();
             assertTrue(result.converged());
             assertTrue(result.nodeVoltages().get("vout") > 0.0);
@@ -66,7 +66,7 @@ class NgspiceDcOpTest {
     @Test
     void mosfetSwitch_converges() {
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(Circuits.mosfetSwitch())) {
+                var session = engine.openSession(Circuits.mosfetSwitch())) {
             assertTrue(session.runOperatingPoint().converged());
         }
     }

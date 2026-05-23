@@ -13,6 +13,7 @@ import dev.bluespice.core.circuit.Node;
 import dev.bluespice.core.exception.TooManySessionsException;
 import dev.bluespice.core.exception.WorkerCrashException;
 import dev.bluespice.core.sim.EngineConfig;
+import dev.bluespice.core.sim.SimulationSession;
 import dev.bluespice.testcommon.NgspiceExtension;
 import java.nio.file.Path;
 import java.util.List;
@@ -48,7 +49,7 @@ class NgspiceMultiSessionTest {
     @Test
     void workerCrash_engineReplacesWorker_nextSessionSucceeds() throws Exception {
         try (NgspiceEngine engine = engine(1, false)) {
-            NgspiceSession session = engine.openSession(divider("crash", 10.0, 1000.0, 1000.0));
+            NgspiceSession session = engine.openSingleSession(divider("crash", 10.0, 1000.0, 1000.0));
             assertEquals(5.0, session.runOperatingPoint().nodeVoltages().get("vout"), 0.005);
 
             Process process = session.worker().process();
@@ -58,7 +59,7 @@ class NgspiceMultiSessionTest {
             assertThrows(WorkerCrashException.class, session::runOperatingPoint);
             session.close();
 
-            try (NgspiceSession next = engine.openSession(divider("after-crash", 6.0, 1000.0, 2000.0))) {
+            try (NgspiceSession next = engine.openSingleSession(divider("after-crash", 6.0, 1000.0, 2000.0))) {
                 assertEquals(4.0, next.runOperatingPoint().nodeVoltages().get("vout"), 0.004);
             }
         }
@@ -67,11 +68,11 @@ class NgspiceMultiSessionTest {
     @Test
     void poolExhaustion_blocksUntilSessionReleased() throws Exception {
         try (NgspiceEngine engine = engine(2, false);
-                NgspiceSession first = engine.openSession(divider("first", 10.0, 1000.0, 1000.0));
-                NgspiceSession second = engine.openSession(divider("second", 12.0, 1000.0, 2000.0));
+                NgspiceSession first = engine.openSingleSession(divider("first", 10.0, 1000.0, 1000.0));
+                NgspiceSession second = engine.openSingleSession(divider("second", 12.0, 1000.0, 2000.0));
                 ExecutorService executor = Executors.newSingleThreadExecutor()) {
             CompletableFuture<NgspiceSession> third = CompletableFuture.supplyAsync(
-                    () -> engine.openSession(divider("third", 5.0, 2200.0, 680.0)),
+                    () -> engine.openSingleSession(divider("third", 5.0, 2200.0, 680.0)),
                     executor);
 
             Thread.sleep(250);
@@ -92,7 +93,7 @@ class NgspiceMultiSessionTest {
     @Test
     void inProcessMode_secondSession_throwsTooManySessionsException() {
         try (NgspiceEngine engine = engine(0, true);
-                NgspiceSession ignored = engine.openSession(divider("in-process", 10.0, 1000.0, 1000.0))) {
+                var ignored = engine.openSession(divider("in-process", 10.0, 1000.0, 1000.0))) {
             assertThrows(
                     TooManySessionsException.class,
                     () -> engine.openSession(divider("blocked", 5.0, 1000.0, 1000.0)));
@@ -100,7 +101,7 @@ class NgspiceMultiSessionTest {
     }
 
     private void runRepeatedOperatingPoints(NgspiceEngine engine, DividerCase testCase) {
-        try (NgspiceSession session = engine.openSession(testCase.circuit())) {
+        try (SimulationSession session = engine.openSession(testCase.circuit())) {
             for (int i = 0; i < 100; i++) {
                 double actual = session.runOperatingPoint().nodeVoltages().get("vout");
                 assertEquals(testCase.expected(), actual, Math.abs(testCase.expected()) * 0.001);

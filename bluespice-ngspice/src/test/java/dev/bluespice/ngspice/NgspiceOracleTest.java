@@ -28,7 +28,7 @@ class NgspiceOracleTest {
     void dcOp_matchesSubprocessBackend(Circuit circuit) {
         NetlistBuilder.BuiltNetlist netlist = netlistBuilder.buildDetailed(circuit);
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(circuit)) {
+                var session = engine.openSession(circuit)) {
             var jna = session.runOperatingPoint();
             for (String node : netlist.nodeNames()) {
                 double oracle = subprocessEngine.runOperatingPoint(netlist.text(), node)

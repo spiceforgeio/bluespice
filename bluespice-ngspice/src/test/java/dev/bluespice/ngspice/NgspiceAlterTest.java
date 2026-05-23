@@ -25,7 +25,7 @@ class NgspiceAlterTest {
     void alterResistor_dcResult_matchesFreshSession() {
         Circuit circuit = voltageDivider(1000.0, 1000.0, 10.0);
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(circuit)) {
+                var session = engine.openSession(circuit)) {
             assertVoltageNear(session.runOperatingPoint(), "vmid", 5.0, tolerancePct(0.01));
 
             ComponentValue.Resistance updated = new ComponentValue.Resistance(3000.0);
@@ -34,7 +34,7 @@ class NgspiceAlterTest {
             OperatingPointResult altered = session.runOperatingPoint();
 
             try (NgspiceEngine freshEngine = engine();
-                    NgspiceSession fresh = freshEngine.openSession(circuit.snapshot())) {
+                    var fresh = freshEngine.openSession(circuit.snapshot())) {
                 assertEquals(
                         fresh.runOperatingPoint().nodeVoltages().get("vmid"),
                         altered.nodeVoltages().get("vmid"),
@@ -47,7 +47,7 @@ class NgspiceAlterTest {
     void alterVoltageSource_dcResult_matchesAnalytical() {
         Circuit circuit = voltageDivider(1000.0, 1000.0, 10.0);
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(circuit)) {
+                var session = engine.openSession(circuit)) {
             ComponentValue.DCVoltage updated = new ComponentValue.DCVoltage(6.0);
             circuit.updateValue("V1", updated);
             session.onParameterChanged("V1", updated);
@@ -60,7 +60,7 @@ class NgspiceAlterTest {
     void alterCapacitor_dcSteadyState_unchanged() {
         Circuit circuit = dividerWithCapacitor();
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(circuit)) {
+                var session = engine.openSession(circuit)) {
             double before = session.runOperatingPoint().nodeVoltages().get("vmid");
 
             ComponentValue.Capacitance updated = new ComponentValue.Capacitance(10.0E-6);
@@ -78,7 +78,7 @@ class NgspiceAlterTest {
     void batchedAlters_appliedBeforeNextOp() {
         Circuit circuit = voltageDivider(1000.0, 1000.0, 10.0);
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(circuit)) {
+                var session = engine.openSession(circuit)) {
             ComponentValue.Resistance r1 = new ComponentValue.Resistance(3000.0);
             ComponentValue.Resistance r2 = new ComponentValue.Resistance(2000.0);
             circuit.updateValue("R1", r1);
@@ -94,7 +94,7 @@ class NgspiceAlterTest {
     void topologyChangeAfterAlter_clearsAlterQueue() {
         Circuit circuit = voltageDivider(1000.0, 1000.0, 10.0);
         try (NgspiceEngine engine = engine();
-                NgspiceSession session = engine.openSession(circuit)) {
+                var session = engine.openSession(circuit)) {
             session.onParameterChanged("R1", new ComponentValue.Resistance(3000.0));
 
             Node vmid = circuit.getNode("vmid");

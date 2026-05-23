@@ -1,9 +1,11 @@
 package dev.bluespice.ngspice;
 
 import dev.bluespice.core.circuit.Circuit;
+import dev.bluespice.core.circuit.Topology;
 import dev.bluespice.core.exception.WorkerCrashException;
 import dev.bluespice.core.sim.EngineConfig;
 import dev.bluespice.core.sim.SimulationEngine;
+import dev.bluespice.core.sim.SimulationSession;
 import dev.bluespice.ngspice.netlist.NetlistBuilder;
 import dev.bluespice.ngspice.worker.WorkerChannel;
 import dev.bluespice.ngspice.worker.WorkerPool;
@@ -33,7 +35,15 @@ public final class NgspiceEngine implements SimulationEngine {
     }
 
     @Override
-    public NgspiceSession openSession(Circuit circuit) {
+    public SimulationSession openSession(Circuit circuit) {
+        Objects.requireNonNull(circuit, "circuit");
+        if (Topology.isDisconnected(circuit)) {
+            return new SplitSession(circuit, this::openSingleSession);
+        }
+        return openSingleSession(circuit);
+    }
+
+    NgspiceSession openSingleSession(Circuit circuit) {
         Objects.requireNonNull(circuit, "circuit");
         WorkerChannel worker;
         try {
