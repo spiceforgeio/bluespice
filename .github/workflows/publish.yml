@@ -18,6 +18,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      # Snapshot publishes are headless (no embedded native libraries).
+      # Native libraries are assembled by the `package` job in integration.yml and
+      # are available as workflow artifacts. Full native packaging is handled in
+      # Phase 11 (Maven Central release workflow).
       - name: Document native artifact mode
         run: |
           echo "GitHub Packages publishes the Maven snapshot artifacts from this checkout."
