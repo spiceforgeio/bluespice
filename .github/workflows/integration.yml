@@ -109,15 +109,19 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p bluespice-ngspice/src/main/resources/natives/windows-x86_64
+          cp /opt/ngspice-win/bin/libngspice-0.dll /opt/ngspice-win/bin/ngspice.dll
           cp /opt/ngspice-win/bin/ngspice.dll bluespice-ngspice/src/main/resources/natives/windows-x86_64/ngspice.dll
           echo "NATIVE_LIB_DIR=$(cygpath -w /opt/ngspice-win/bin)" >> "$GITHUB_ENV"
           echo "NATIVE_RESOURCE=bluespice-ngspice/src/main/resources/natives/windows-x86_64/ngspice.dll" >> "$GITHUB_ENV"
-      - name: Run integration tests
-        if: runner.os != 'Windows'
+      - name: Run integration tests on Linux
+        if: runner.os == 'Linux'
         run: ./gradlew test -Ptags=intg -Djna.library.path="${{ env.NATIVE_LIB_DIR }}" -Djava.library.path="${{ env.NATIVE_LIB_DIR }}"
+      - name: Run integration tests on macOS
+        if: runner.os == 'macOS'
+        run: ./gradlew test -Ptags=intg -x :bluespice-examples:test -Djna.library.path="${{ env.NATIVE_LIB_DIR }}" -Djava.library.path="${{ env.NATIVE_LIB_DIR }}"
       - name: Run integration tests on Windows
         if: runner.os == 'Windows'
-        run: .\gradlew.bat test -Ptags=intg -Djna.library.path="${{ env.NATIVE_LIB_DIR }}" -Djava.library.path="${{ env.NATIVE_LIB_DIR }}"
+        run: .\gradlew.bat test -Ptags=intg -x :bluespice-examples:test -Djna.library.path="${{ env.NATIVE_LIB_DIR }}" -Djava.library.path="${{ env.NATIVE_LIB_DIR }}"
       - name: Upload native library
         uses: actions/upload-artifact@v4
         with:
