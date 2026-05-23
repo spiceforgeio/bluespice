@@ -9,6 +9,9 @@ import java.util.IdentityHashMap;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * Bounded pool of ngspice workers.
+ */
 public final class WorkerPool implements AutoCloseable {
     private final EngineConfig config;
     private final int maxWorkers;
@@ -18,11 +21,17 @@ public final class WorkerPool implements AutoCloseable {
     private int workerCount;
     private boolean closed;
 
+    /**
+     * Creates a pool from engine configuration.
+     */
     public WorkerPool(EngineConfig config) {
         this.config = Objects.requireNonNull(config, "config");
         this.maxWorkers = maxWorkers(config);
     }
 
+    /**
+     * Acquires an active worker, blocking when the pool is at capacity.
+     */
     public WorkerChannel acquire() throws InterruptedException {
         WorkerChannel worker = takeIdleOrReserveSlot();
         if (worker != null) {
@@ -49,6 +58,9 @@ public final class WorkerPool implements AutoCloseable {
         }
     }
 
+    /**
+     * Returns a worker to the idle pool after resetting its simulator state.
+     */
     public void release(WorkerChannel worker) {
         Objects.requireNonNull(worker, "worker");
 
@@ -81,6 +93,9 @@ public final class WorkerPool implements AutoCloseable {
         closeAndForget(worker);
     }
 
+    /**
+     * Starts a replacement for a failed worker.
+     */
     public WorkerChannel replaceDeadWorker(WorkerChannel dead) {
         Objects.requireNonNull(dead, "dead");
         WorkerChannel replacement = newWorker();
@@ -106,10 +121,16 @@ public final class WorkerPool implements AutoCloseable {
         }
     }
 
+    /**
+     * Closes all workers.
+     */
     public void shutdown() {
         close();
     }
 
+    /**
+     * Closes all workers and prevents new acquisitions.
+     */
     @Override
     public void close() {
         WorkerChannel[] workers;

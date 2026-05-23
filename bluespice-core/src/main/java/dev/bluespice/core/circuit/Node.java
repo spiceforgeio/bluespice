@@ -2,6 +2,9 @@ package dev.bluespice.core.circuit;
 
 import java.util.Objects;
 
+/**
+ * Immutable circuit node identity.
+ */
 public final class Node {
     private final String label;
     private final long internalId;
@@ -13,14 +16,23 @@ public final class Node {
         this.ground = ground;
     }
 
+    /**
+     * User-visible node label.
+     */
     public String label() {
         return label;
     }
 
+    /**
+     * Stable per-circuit identity used for equality.
+     */
     public long internalId() {
         return internalId;
     }
 
+    /**
+     * Returns whether this node is circuit ground.
+     */
     public boolean isGround() {
         return ground;
     }

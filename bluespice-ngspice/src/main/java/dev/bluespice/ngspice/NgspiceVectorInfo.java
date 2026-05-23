@@ -6,6 +6,9 @@ import com.sun.jna.Structure;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Minimal 64-bit ngspice vector-info structure reader.
+ */
 public final class NgspiceVectorInfo extends Structure {
     private static final int SUPPORTED_POINTER_SIZE = 8;
     private static final int REAL_DATA_OFFSET_64 = 16;
@@ -18,9 +21,15 @@ public final class NgspiceVectorInfo extends Structure {
     public Pointer v_compdata;
     public int v_length;
 
+    /**
+     * Creates an unbound JNA structure.
+     */
     public NgspiceVectorInfo() {
     }
 
+    /**
+     * Creates a structure view over an ngspice pointer.
+     */
     public NgspiceVectorInfo(Pointer peer) {
         super(peer);
     }
@@ -30,6 +39,9 @@ public final class NgspiceVectorInfo extends Structure {
         return List.of("v_name", "v_type", "v_flags", "v_realdata", "v_compdata", "v_length");
     }
 
+    /**
+     * Reads the first real value from a vector-info pointer.
+     */
     public static double firstRealValue(Pointer vectorInfo) {
         Objects.requireNonNull(vectorInfo, "vectorInfo");
         double[] values = realValues(vectorInfo);
@@ -39,6 +51,9 @@ public final class NgspiceVectorInfo extends Structure {
         return values[0];
     }
 
+    /**
+     * Reads all real values from a vector-info pointer.
+     */
     public static double[] realValues(Pointer vectorInfo) {
         Objects.requireNonNull(vectorInfo, "vectorInfo");
         ensureSupportedAbi();

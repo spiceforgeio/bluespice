@@ -14,22 +14,37 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Deterministic non-native backend for unit tests and examples.
+ */
 public final class StubEngine implements SimulationEngine {
+    /**
+     * Opens a stub session over the supplied circuit.
+     */
     @Override
     public SimulationSession openSession(Circuit circuit) {
         return new StubSession(circuit);
     }
 
+    /**
+     * Returns the backend name {@code stub}.
+     */
     @Override
     public String backendName() {
         return "stub";
     }
 
+    /**
+     * Returns the stub backend version marker.
+     */
     @Override
     public String backendVersion() {
         return "phase-1";
     }
 
+    /**
+     * Releases no resources; included for API symmetry.
+     */
     @Override
     public void close() {
     }

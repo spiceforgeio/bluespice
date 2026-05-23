@@ -1,5 +1,6 @@
 package dev.bluespice.ngspice.worker;
 
+import dev.bluespice.core.exception.SimulationTimeoutException;
 import dev.bluespice.core.exception.WorkerCrashException;
 import dev.bluespice.core.sim.EngineConfig;
 import java.time.Duration;
@@ -50,10 +51,13 @@ final class InProcessWorkerChannel extends WorkerChannel {
         CompletableFuture<WorkerProtocol.Response> response = new CompletableFuture<>();
         submit(new Request(command, response));
         try {
-            return response.get();
+            return response.get(Math.max(1L, config.simulationTimeout().toMillis()), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new WorkerCrashException("interrupted while waiting for in-process ngspice worker", e);
+        } catch (TimeoutException e) {
+            sendWithoutResponse(new WorkerProtocol.Command.BgHalt());
+            throw new SimulationTimeoutException("Worker did not respond within " + config.simulationTimeout(), e);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof WorkerCrashException workerCrash) {

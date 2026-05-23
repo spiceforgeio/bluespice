@@ -5,6 +5,9 @@ import java.util.Objects;
 
 import static dev.bluespice.core.circuit.CircuitValidation.requireText;
 
+/**
+ * Immutable component instance inside a {@link Circuit}.
+ */
 public final class Component {
     private final String id;
     private final ComponentType type;
@@ -21,22 +24,37 @@ public final class Component {
         }
     }
 
+    /**
+     * Stable component id supplied by the caller.
+     */
     public String id() {
         return id;
     }
 
+    /**
+     * Electrical component category.
+     */
     public ComponentType type() {
         return type;
     }
 
+    /**
+     * Current component value or model reference.
+     */
     public ComponentValue value() {
         return value;
     }
 
+    /**
+     * Ordered terminals connected to circuit nodes.
+     */
     public List<Node> terminals() {
         return terminals;
     }
 
+    /**
+     * Returns whether the component is linear for partitioning and fast-path decisions.
+     */
     public boolean isLinear() {
         return switch (type) {
             case RESISTOR, CAPACITOR, INDUCTOR, VOLTAGE_SOURCE, CURRENT_SOURCE,

@@ -3,14 +3,71 @@ name: Nightly
 on:
   schedule:
     - cron: '0 2 * * *'
+  workflow_dispatch:
 
 jobs:
   oracle:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO: oracle validation"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Restore ngspice cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/ngspice
+          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-linux.sh') }}
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential bison flex libtool automake autoconf pkg-config
+      - name: Build ngspice shared library
+        run: |
+          source ./gradle.properties
+          sudo env \
+            NGSPICE_VERSION="$ngspiceVersion" \
+            NGSPICE_SOURCE_URL="$ngspiceSourceUrl" \
+            NGSPICE_SHA256="$ngspiceSha256" \
+            ./gradle/native-build/build-ngspice-linux.sh
+      - name: Run oracle tests
+        run: |
+          export PATH="/opt/ngspice/bin:$PATH"
+          ./gradlew test -Ptags=oracle -Djna.library.path=/opt/ngspice/lib -Djava.library.path=/opt/ngspice/lib
+      - name: Upload oracle test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-results
+          path: '**/build/reports/tests/'
 
-  benchmarks:
+  benchmark:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO: benchmarks"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Restore ngspice cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/ngspice
+          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-linux.sh') }}
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential bison flex libtool automake autoconf pkg-config
+      - name: Build ngspice shared library
+        run: |
+          source ./gradle.properties
+          sudo env \
+            NGSPICE_VERSION="$ngspiceVersion" \
+            NGSPICE_SOURCE_URL="$ngspiceSourceUrl" \
+            NGSPICE_SHA256="$ngspiceSha256" \
+            ./gradle/native-build/build-ngspice-linux.sh
+      - name: Run JMH benchmarks
+        run: ./gradlew jmh -Djna.library.path=/opt/ngspice/lib -Djava.library.path=/opt/ngspice/lib
+      - name: Upload JMH results
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmh-results-${{ github.sha }}
+          path: bluespice-benchmarks/build/results/jmh/
+      - name: Compare with baseline
+        run: ./scripts/check-benchmark-regression.sh

@@ -11,9 +11,15 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 
+/**
+ * Utility methods for connected-component analysis of circuit topology.
+ */
 public final class Topology {
     private Topology() {}
 
+    /**
+     * Returns node groups connected by non-ground component terminals.
+     */
     public static List<Set<Node>> connectedComponents(Circuit circuit) {
         Partition partition = Partition.from(circuit);
         List<Set<Node>> components = new ArrayList<>();
@@ -33,10 +39,16 @@ public final class Topology {
         return List.copyOf(components);
     }
 
+    /**
+     * Returns whether the circuit contains multiple independent topology groups.
+     */
     public static boolean isDisconnected(Circuit circuit) {
         return connectedComponents(circuit).size() > 1;
     }
 
+    /**
+     * Splits independent topology groups into separate circuit snapshots.
+     */
     public static List<Circuit> split(Circuit circuit) {
         Partition partition = Partition.from(circuit);
         List<Circuit> parts = new ArrayList<>();

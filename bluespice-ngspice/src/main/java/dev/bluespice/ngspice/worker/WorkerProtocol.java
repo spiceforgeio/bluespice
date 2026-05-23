@@ -15,6 +15,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * JSON protocol shared by the BlueSpice JVM and ngspice worker JVMs.
+ */
 public final class WorkerProtocol {
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule())
@@ -23,18 +26,30 @@ public final class WorkerProtocol {
 
     private WorkerProtocol() {}
 
+    /**
+     * Serializes a worker command as one JSON line.
+     */
     public static String serializeCommand(Command command) {
         return write(command);
     }
 
+    /**
+     * Deserializes a worker command from one JSON line.
+     */
     public static Command deserializeCommand(String json) {
         return read(json, Command.class);
     }
 
+    /**
+     * Serializes a worker response as one JSON line.
+     */
     public static String serializeResponse(Response response) {
         return write(response);
     }
 
+    /**
+     * Deserializes a worker response from one JSON line.
+     */
     public static Response deserializeResponse(String json) {
         return read(json, Response.class);
     }
@@ -55,6 +70,9 @@ public final class WorkerProtocol {
         }
     }
 
+    /**
+     * Commands accepted by an ngspice worker.
+     */
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
     @JsonSubTypes({
             @JsonSubTypes.Type(value = Command.LoadCircuit.class, name = "LOAD_CIRCUIT"),
@@ -67,6 +85,9 @@ public final class WorkerProtocol {
             @JsonSubTypes.Type(value = Command.Exit.class, name = "EXIT")
     })
     public sealed interface Command {
+        /**
+         * Loads a complete netlist.
+         */
         record LoadCircuit(
                 List<String> netlistLines,
                 List<String> nodeNames,
@@ -83,25 +104,49 @@ public final class WorkerProtocol {
             }
         }
 
+        /**
+         * Runs a DC operating-point analysis.
+         */
         record RunOperatingPoint() implements Command {}
 
+        /**
+         * Runs a transient analysis.
+         */
         record RunTransient(TransientConfig config, boolean useInitialConditions) implements Command {
             public RunTransient(TransientConfig config) {
                 this(config, false);
             }
         }
 
+        /**
+         * Alters one component or model parameter.
+         */
         record Alter(String componentId, ComponentValue newValue) implements Command {}
 
+        /**
+         * Requests a named vector.
+         */
         record GetVector(String name) implements Command {}
 
+        /**
+         * Resets the worker simulator state.
+         */
         record Reset() implements Command {}
 
+        /**
+         * Halts a background transient.
+         */
         record BgHalt() implements Command {}
 
+        /**
+         * Exits the worker loop.
+         */
         record Exit() implements Command {}
     }
 
+    /**
+     * Responses returned by an ngspice worker.
+     */
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
     @JsonSubTypes({
             @JsonSubTypes.Type(value = Response.Ok.class, name = "OK"),
@@ -111,18 +156,33 @@ public final class WorkerProtocol {
             @JsonSubTypes.Type(value = Response.Vector.class, name = "VECTOR")
     })
     public sealed interface Response {
+        /**
+         * Successful command with no payload.
+         */
         record Ok() implements Response {}
 
+        /**
+         * Failed command with diagnostic text.
+         */
         record Error(String message) implements Response {}
 
+        /**
+         * DC operating-point result payload.
+         */
         record ResultOp(OperatingPointResult result) implements Response {}
 
+        /**
+         * Transient result payload plus captured initial-condition state.
+         */
         record ResultTran(TransientResult result, CapturedIcState capturedIc) implements Response {
             public ResultTran(TransientResult result) {
                 this(result, CapturedIcState.EMPTY);
             }
         }
 
+        /**
+         * Raw vector payload.
+         */
         record Vector(String name, double[] values, Map<String, String> metadata) implements Response {}
     }
 

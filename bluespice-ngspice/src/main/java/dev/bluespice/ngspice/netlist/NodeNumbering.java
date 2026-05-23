@@ -5,6 +5,9 @@ import dev.bluespice.core.circuit.Node;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Maps BlueSpice node identities to SPICE node names.
+ */
 public final class NodeNumbering {
     private final Map<Long, String> spiceNames;
 
@@ -12,6 +15,9 @@ public final class NodeNumbering {
         this.spiceNames = Map.copyOf(spiceNames);
     }
 
+    /**
+     * Creates numbering for a circuit snapshot.
+     */
     public static NodeNumbering from(Circuit circuit) {
         Map<Long, String> names = new LinkedHashMap<>();
         for (Node node : circuit.nodes()) {
@@ -21,6 +27,9 @@ public final class NodeNumbering {
         return new NodeNumbering(names);
     }
 
+    /**
+     * Returns the SPICE name for a node.
+     */
     public String spiceName(Node node) {
         String spiceName = spiceNames.get(node.internalId());
         if (spiceName == null) {

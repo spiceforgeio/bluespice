@@ -23,6 +23,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Worker process entry point that serializes ngspice access behind a line-oriented protocol.
+ */
 public final class NgspiceWorker {
     private final boolean detachOnExit;
     private final WorkerCallbacks callbacks = new WorkerCallbacks();
@@ -38,6 +41,9 @@ public final class NgspiceWorker {
         this.detachOnExit = detachOnExit;
     }
 
+    /**
+     * Starts the worker process loop.
+     */
     public static void main(String[] args) throws IOException {
         String libraryPath = System.getProperty("jna.library.path");
         if (libraryPath != null && !libraryPath.isBlank()) {
@@ -138,6 +144,7 @@ public final class NgspiceWorker {
                 case WorkerProtocol.Command.RunOperatingPoint ignored -> runOperatingPoint();
                 case WorkerProtocol.Command.RunTransient runTransient -> runTransient(runTransient);
                 case WorkerProtocol.Command.Alter alter -> alter(alter.componentId(), alter.newValue());
+                case WorkerProtocol.Command.GetVector getVector -> getVector(getVector.name());
                 case WorkerProtocol.Command.Reset ignored -> reset();
                 case WorkerProtocol.Command.BgHalt ignored -> bgHalt();
                 case WorkerProtocol.Command.Exit ignored -> exit();
@@ -185,18 +192,25 @@ public final class NgspiceWorker {
         }
         branchComponents.clear();
         branchComponents.addAll(command.branchComponents());
+        callbacks.clearDiagnostics();
         int code = NgspiceLibrary.ngSpice_Circ(lines);
-        if (code != 0) {
-            return new WorkerProtocol.Response.Error("ngSpice_Circ failed with code " + code);
+        if (code != 0 || callbacks.hasFatalError()) {
+            return new WorkerProtocol.Response.Error("invalid netlist: " + diagnosticMessage(
+                    "ngSpice_Circ failed with code " + code));
         }
         return new WorkerProtocol.Response.Ok();
     }
 
     private WorkerProtocol.Response runOperatingPoint() {
         long started = System.nanoTime();
+        callbacks.clearDiagnostics();
         int code = NgspiceLibrary.ngSpice_Command("op");
+        if (callbacks.convergenceFailed()) {
+            return new WorkerProtocol.Response.Error("convergence: " + callbacks.lastErrorMessage());
+        }
         if (code != 0) {
-            return new WorkerProtocol.Response.Error("ngSpice_Command op failed with code " + code);
+            return new WorkerProtocol.Response.Error(diagnosticMessage(
+                    "ngSpice_Command op failed with code " + code));
         }
 
         Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
@@ -210,19 +224,30 @@ public final class NgspiceWorker {
         }
         TransientConfig config = command.config();
         if (config.saveInitialDc() && !command.useInitialConditions()) {
+            callbacks.clearDiagnostics();
             int opCode = NgspiceLibrary.ngSpice_Command("op");
+            if (callbacks.convergenceFailed()) {
+                return new WorkerProtocol.Response.Error("convergence: " + callbacks.lastErrorMessage());
+            }
             if (opCode != 0) {
-                return new WorkerProtocol.Response.Error("ngSpice_Command op failed with code " + opCode);
+                return new WorkerProtocol.Response.Error(diagnosticMessage(
+                        "ngSpice_Command op failed with code " + opCode));
             }
         }
 
         long started = System.nanoTime();
         callbacks.markBgRunning();
         String tranCommand = transientCommand(config, command.useInitialConditions());
+        callbacks.clearDiagnostics();
         int code = NgspiceLibrary.ngSpice_Command(tranCommand);
+        if (callbacks.convergenceFailed()) {
+            callbacks.markBgStopped();
+            return new WorkerProtocol.Response.Error("convergence: " + callbacks.lastErrorMessage());
+        }
         if (code != 0) {
             callbacks.markBgStopped();
-            return new WorkerProtocol.Response.Error("ngSpice_Command " + tranCommand + " failed with code " + code);
+            return new WorkerProtocol.Response.Error(diagnosticMessage(
+                    "ngSpice_Command " + tranCommand + " failed with code " + code));
         }
         activeTransient = new ActiveTransient(started);
         return null;
@@ -289,6 +314,11 @@ public final class NgspiceWorker {
                 useUic ? " uic" : "");
     }
 
+    private String diagnosticMessage(String fallback) {
+        String message = callbacks.lastErrorMessage();
+        return message == null || message.isBlank() ? fallback : message;
+    }
+
     private WorkerProtocol.Response alter(String componentId, ComponentValue newValue) {
         for (String command : alterCommands(componentId, newValue)) {
             int code = NgspiceLibrary.ngSpice_Command(command);
@@ -297,6 +327,14 @@ public final class NgspiceWorker {
             }
         }
         return new WorkerProtocol.Response.Ok();
+    }
+
+    private WorkerProtocol.Response getVector(String name) {
+        try {
+            return new WorkerProtocol.Response.Vector(name, VectorExtractor.readArray(name), Map.of());
+        } catch (IllegalStateException e) {
+            return new WorkerProtocol.Response.Error(e.getMessage());
+        }
     }
 
     static String alterCommand(String componentId, ComponentValue newValue) {
@@ -363,15 +401,21 @@ public final class NgspiceWorker {
 
     private static final class WorkerCallbacks {
         private final Object bgLock = new Object();
+        private final StringBuilder diagnostics = new StringBuilder();
         private volatile boolean bgRunning;
+        private volatile boolean convergenceFailed;
+        private volatile boolean fatalError;
+        private volatile String lastErrorMessage = "";
 
         final NgspiceCallbacks.SendChar sendChar = (outputLine, id, userdata) -> {
             System.err.println(outputLine);
+            captureDiagnostic(outputLine);
             return 0;
         };
         final NgspiceCallbacks.SendStat sendStat = (status, id, userdata) -> 0;
         final NgspiceCallbacks.ControlledExit controlledExit = (status, unload, exitOnQuit, id, userdata) -> {
             System.err.println("ngspice controlled exit: status=" + status);
+            captureDiagnostic("ngspice controlled exit: status=" + status);
             return 0;
         };
         final NgspiceCallbacks.SendData sendData = (vecvaluesall, count, id, userdata) -> 0;
@@ -411,6 +455,64 @@ public final class NgspiceWorker {
                         Thread.currentThread().interrupt();
                     }
                 }
+            }
+        }
+
+        void clearDiagnostics() {
+            synchronized (diagnostics) {
+                diagnostics.setLength(0);
+            }
+            convergenceFailed = false;
+            fatalError = false;
+            lastErrorMessage = "";
+        }
+
+        boolean convergenceFailed() {
+            return convergenceFailed;
+        }
+
+        boolean hasFatalError() {
+            return fatalError;
+        }
+
+        String lastErrorMessage() {
+            String message = lastErrorMessage;
+            if (message != null && !message.isBlank()) {
+                return message;
+            }
+            synchronized (diagnostics) {
+                return diagnostics.toString().trim();
+            }
+        }
+
+        private void captureDiagnostic(String outputLine) {
+            if (outputLine == null) {
+                return;
+            }
+            String line = outputLine.strip();
+            if (line.isEmpty()) {
+                return;
+            }
+            synchronized (diagnostics) {
+                if (diagnostics.length() > 0) {
+                    diagnostics.append(System.lineSeparator());
+                }
+                diagnostics.append(line);
+            }
+            String normalized = line.toLowerCase(Locale.ROOT);
+            if (normalized.contains("convergence failed")
+                    || normalized.contains("doiter: limit")
+                    || normalized.contains("singular matrix")
+                    || normalized.contains("timestep too small")) {
+                convergenceFailed = true;
+                lastErrorMessage = line;
+            }
+            if (normalized.contains("error")
+                    || normalized.contains("too few")
+                    || normalized.contains("unknown")
+                    || normalized.contains("singular matrix")) {
+                fatalError = true;
+                lastErrorMessage = line;
             }
         }
     }

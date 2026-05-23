@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.testing.Test
+import org.gradle.external.javadoc.StandardJavadocDocletOptions
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
 plugins {
@@ -6,7 +7,7 @@ plugins {
 }
 
 group = "dev.bluespice"
-version = "0.1.0-SNAPSHOT"
+version = providers.gradleProperty("version").orElse("0.1.0-SNAPSHOT").get()
 
 subprojects {
     apply(plugin = "java-library")
@@ -18,6 +19,8 @@ subprojects {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(21))
         }
+        withSourcesJar()
+        withJavadocJar()
     }
 
     tasks.withType<JavaCompile>().configureEach {
@@ -38,6 +41,11 @@ subprojects {
         testLogging {
             events("failed", "skipped")
         }
+    }
+
+    tasks.withType<Javadoc>().configureEach {
+        options.encoding = "UTF-8"
+        (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:none", "-quiet")
     }
 }
 

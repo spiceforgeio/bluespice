@@ -1,5 +1,13 @@
 package dev.bluespice.core.sim;
 
+/**
+ * Time-domain simulation configuration.
+ *
+ * @param stepSeconds simulation step size in seconds
+ * @param stopSeconds final simulation time in seconds
+ * @param startSeconds initial simulation time in seconds
+ * @param saveInitialDc whether the backend should solve and save a DC initial state before the run
+ */
 public record TransientConfig(
         double stepSeconds,
         double stopSeconds,
@@ -15,6 +23,9 @@ public record TransientConfig(
         }
     }
 
+    /**
+     * Creates a transient configuration sized for one game or simulation tick.
+     */
     public static TransientConfig oneTick(double tickSeconds) {
         requireFinitePositive(tickSeconds, "tickSeconds");
         return new TransientConfig(tickSeconds / 100, tickSeconds, 0, true);

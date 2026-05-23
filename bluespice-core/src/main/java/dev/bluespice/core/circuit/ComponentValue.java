@@ -9,37 +9,58 @@ import static dev.bluespice.core.circuit.CircuitValidation.requireFinite;
 import static dev.bluespice.core.circuit.CircuitValidation.requirePositive;
 import static dev.bluespice.core.circuit.CircuitValidation.requireText;
 
+/**
+ * Typed value payload for a {@link Component}.
+ */
 public sealed interface ComponentValue {
+    /**
+     * Resistance in ohms.
+     */
     record Resistance(double ohms) implements ComponentValue {
         public Resistance {
             requirePositive(ohms, "ohms");
         }
     }
 
+    /**
+     * Capacitance in farads.
+     */
     record Capacitance(double farads) implements ComponentValue {
         public Capacitance {
             requirePositive(farads, "farads");
         }
     }
 
+    /**
+     * Inductance in henries.
+     */
     record Inductance(double henries) implements ComponentValue {
         public Inductance {
             requirePositive(henries, "henries");
         }
     }
 
+    /**
+     * DC voltage source value in volts.
+     */
     record DCVoltage(double volts) implements ComponentValue {
         public DCVoltage {
             requireFinite(volts, "volts");
         }
     }
 
+    /**
+     * DC current source value in amperes.
+     */
     record DCCurrent(double amps) implements ComponentValue {
         public DCCurrent {
             requireFinite(amps, "amps");
         }
     }
 
+    /**
+     * Named simulator model reference with ordered numeric parameters.
+     */
     record ModelRef(String modelName, Map<String, Double> params) implements ComponentValue {
         public ModelRef {
             modelName = requireText(modelName, "modelName");
@@ -66,6 +87,9 @@ public sealed interface ComponentValue {
         }
     }
 
+    /**
+     * Pulse voltage source configuration.
+     */
     record PulseSource(double v1, double v2, double td, double tr, double tf, double pw, double per)
             implements ComponentValue {
         public PulseSource {

@@ -49,7 +49,7 @@ public final class SubprocessEngine {
         }
     }
 
-    private boolean isNgspiceExecutableAvailable() {
+    public boolean isNgspiceExecutableAvailable() {
         try {
             Process process = new ProcessBuilder("ngspice", "--version")
                     .redirectErrorStream(true)

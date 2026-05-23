@@ -1,0 +1,18 @@
+BlueSpice
+Copyright 2026 BlueSpice contributors
+
+BlueSpice is distributed under the Apache License, Version 2.0.
+
+This distribution can include ngspice shared libraries for supported platforms.
+ngspice is dynamically loaded through JNA; users may replace the shared library
+with a compatible ngspice build. The ngspice source code is primarily licensed
+under the Modified BSD license, with selected files under LGPL-family and other
+compatible licenses as documented by upstream ngspice.
+
+Bundled license texts:
+
+- LICENSES/ngspice-BSD-3-Clause.txt
+- LICENSES/ngspice-LGPL-2.txt
+
+ngspice does not provide upstream GPU acceleration as of 2026. BlueSpice
+therefore ships CPU-only ngspice integration.

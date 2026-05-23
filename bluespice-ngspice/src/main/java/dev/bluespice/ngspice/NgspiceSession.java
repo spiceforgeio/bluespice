@@ -5,6 +5,9 @@ import dev.bluespice.core.circuit.Component;
 import dev.bluespice.core.circuit.ComponentType;
 import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.circuit.Node;
+import dev.bluespice.core.exception.ConvergenceException;
+import dev.bluespice.core.exception.SimulationTimeoutException;
+import dev.bluespice.core.exception.WorkerCrashException;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.SimulationSession;
 import dev.bluespice.core.sim.TransientConfig;
@@ -19,6 +22,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * ngspice-backed simulation session.
+ *
+ * <p>Sessions are intended for single-threaded control. Parameter changes cancel an active
+ * transient before applying alters so callers can restart from the most recently captured
+ * initial-condition state.
+ */
 public final class NgspiceSession implements SimulationSession {
     private final Circuit circuit;
     private final WorkerChannel worker;
@@ -49,7 +59,7 @@ public final class NgspiceSession implements SimulationSession {
         ensureOpen();
         flushDirtyState(false);
 
-        WorkerProtocol.Response response = worker.send(new WorkerProtocol.Command.RunOperatingPoint());
+        WorkerProtocol.Response response = send(new WorkerProtocol.Command.RunOperatingPoint());
         WorkerProtocol.Response.ResultOp result =
                 expect(response, WorkerProtocol.Response.ResultOp.class, "RUN_OP");
         return withDerivedBranchCurrents(result.result());
@@ -68,7 +78,7 @@ public final class NgspiceSession implements SimulationSession {
         }
 
         try {
-            WorkerProtocol.Response response = worker.send(new WorkerProtocol.Command.RunTransient(config, useInitialConditions));
+            WorkerProtocol.Response response = send(new WorkerProtocol.Command.RunTransient(config, useInitialConditions));
             WorkerProtocol.Response.ResultTran result =
                     expect(response, WorkerProtocol.Response.ResultTran.class, "RUN_TRAN");
             synchronized (this) {
@@ -89,7 +99,12 @@ public final class NgspiceSession implements SimulationSession {
         if (!transientRunning.get()) {
             return;
         }
-        worker.sendWithoutResponse(new WorkerProtocol.Command.BgHalt());
+        try {
+            worker.sendWithoutResponse(new WorkerProtocol.Command.BgHalt());
+        } catch (WorkerCrashException | SimulationTimeoutException e) {
+            markWorkerStateLost();
+            throw e;
+        }
         synchronized (transientLock) {
             while (transientRunning.get()) {
                 try {
@@ -161,7 +176,7 @@ public final class NgspiceSession implements SimulationSession {
         }
         if (paramDirty) {
             for (WorkerProtocol.Command.Alter alter : pendingAlters) {
-                expectOk(worker.send(alter));
+                expectOk(send(alter));
             }
             paramDirty = false;
             pendingAlters.clear();
@@ -171,7 +186,7 @@ public final class NgspiceSession implements SimulationSession {
 
     private void loadCircuit(CapturedIcState ic) {
         NetlistBuilder.BuiltNetlist netlist = netlistBuilder.buildDetailed(circuit, ic);
-        expectOk(worker.send(new WorkerProtocol.Command.LoadCircuit(
+        expectOk(send(new WorkerProtocol.Command.LoadCircuit(
                 netlist.lines(), netlist.nodeNames(), netlist.branchComponents())));
     }
 
@@ -244,6 +259,23 @@ public final class NgspiceSession implements SimulationSession {
         expect(response, WorkerProtocol.Response.Ok.class, "worker command");
     }
 
+    private WorkerProtocol.Response send(WorkerProtocol.Command command) {
+        try {
+            return worker.send(command);
+        } catch (WorkerCrashException | SimulationTimeoutException e) {
+            markWorkerStateLost();
+            throw e;
+        }
+    }
+
+    private synchronized void markWorkerStateLost() {
+        topologyDirty = true;
+        paramDirty = false;
+        pendingAlters.clear();
+        lastCapturedIc = CapturedIcState.EMPTY;
+        icDirty = false;
+    }
+
     private <T extends WorkerProtocol.Response> T expect(
             WorkerProtocol.Response response,
             Class<T> type,
@@ -252,6 +284,13 @@ public final class NgspiceSession implements SimulationSession {
             return type.cast(response);
         }
         if (response instanceof WorkerProtocol.Response.Error error) {
+            if (error.message().startsWith("convergence:")) {
+                throw new ConvergenceException(error.message().substring("convergence:".length()).trim());
+            }
+            if (error.message().startsWith("invalid netlist:")) {
+                throw new IllegalArgumentException("Invalid netlist: "
+                        + error.message().substring("invalid netlist:".length()).trim());
+            }
             throw new IllegalStateException(command + " failed: " + error.message());
         }
         throw new IllegalStateException(command + " returned unexpected response: " + response.getClass().getSimpleName());

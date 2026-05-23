@@ -1,6 +1,7 @@
 package dev.bluespice.ngspice;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.bluespice.core.circuit.Circuit;
 import dev.bluespice.core.sim.EngineConfig;
@@ -10,7 +11,6 @@ import dev.bluespice.testcommon.Circuits;
 import dev.bluespice.testcommon.NgspiceExtension;
 import java.nio.file.Path;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,16 +26,14 @@ class NgspiceOracleTest {
     @ParameterizedTest
     @MethodSource("allCircuits")
     void dcOp_matchesSubprocessBackend(Circuit circuit) {
+        assertTrue(subprocessEngine.isNgspiceExecutableAvailable(), "ngspice executable is required for oracle tests");
         NetlistBuilder.BuiltNetlist netlist = netlistBuilder.buildDetailed(circuit);
         try (NgspiceEngine engine = engine();
                 var session = engine.openSession(circuit)) {
             var jna = session.runOperatingPoint();
             for (String node : netlist.nodeNames()) {
                 double oracle = subprocessEngine.runOperatingPoint(netlist.text(), node)
-                        .orElseGet(() -> {
-                            Assumptions.abort("ngspice executable is not available");
-                            return Double.NaN;
-                        });
+                        .orElseThrow(() -> new AssertionError("ngspice oracle did not return node " + node));
                 assertEquals(oracle, jna.nodeVoltages().get(node), Math.max(Math.abs(oracle) * 0.0001, 1.0E-9), node);
             }
         }

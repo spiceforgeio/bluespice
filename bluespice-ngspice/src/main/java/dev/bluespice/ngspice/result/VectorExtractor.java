@@ -14,14 +14,23 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalDouble;
 
+/**
+ * Converts ngspice vectors from the current plot into BlueSpice result objects.
+ */
 public final class VectorExtractor {
     private VectorExtractor() {}
 
+    /**
+     * Reads a scalar vector value or throws when the vector is missing.
+     */
     public static double readScalar(String vectorName) {
         return findVector(vectorName)
                 .orElseThrow(() -> new IllegalStateException("missing ngspice vector: " + vectorName));
     }
 
+    /**
+     * Reads all real values for a vector or throws when the vector is missing.
+     */
     public static double[] readArray(String vectorName) {
         Pointer pointer = findVectorPointer(vectorName);
         if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
@@ -30,6 +39,9 @@ public final class VectorExtractor {
         return NgspiceVectorInfo.realValues(pointer);
     }
 
+    /**
+     * Extracts DC operating-point vectors for selected nodes and branch components.
+     */
     public static OperatingPointResult extractDcOp(
             List<String> nodeNames,
             List<String> branchComponentIds,
@@ -62,6 +74,9 @@ public final class VectorExtractor {
         return new OperatingPointResult(nodeVoltages, branchCurrents, complete, solveTime);
     }
 
+    /**
+     * Extracts transient vectors for selected nodes and branch components.
+     */
     public static TransientResult extractTransient(
             List<String> nodeNames,
             List<String> branchComponentIds,
@@ -87,6 +102,9 @@ public final class VectorExtractor {
         return new TransientResult(timePoints, nodeVoltages, branchCurrents, completed, solveTime);
     }
 
+    /**
+     * Finds the last real value of a vector, if present.
+     */
     public static OptionalDouble findLastValue(String vectorName) {
         java.util.Optional<double[]> values = findVectorArray(vectorName);
         if (values.isEmpty()) {

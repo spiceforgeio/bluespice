@@ -7,6 +7,15 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
+/**
+ * Immutable time-domain simulation result.
+ *
+ * @param timePoints strictly ascending sample times in seconds
+ * @param nodeVoltages node label to voltage series in volts
+ * @param branchCurrents component id to branch current series in amperes
+ * @param completed whether the transient reached its configured stop time
+ * @param solveTime backend solve duration
+ */
 public record TransientResult(
         double[] timePoints,
         Map<String, double[]> nodeVoltages,
@@ -45,14 +54,23 @@ public record TransientResult(
         return copySeriesMap(branchCurrents, timePoints.length, "branchCurrents");
     }
 
+    /**
+     * Returns the linearly interpolated voltage at a sample time.
+     */
     public double voltageAt(String node, double time) {
         return valueAt(nodeVoltages, node, time);
     }
 
+    /**
+     * Returns the final voltage for a node.
+     */
     public double voltageAtEnd(String node) {
         return valueAtEnd(nodeVoltages, node);
     }
 
+    /**
+     * Returns the final branch current for a component.
+     */
     public double currentAtEnd(String componentId) {
         return valueAtEnd(branchCurrents, componentId);
     }

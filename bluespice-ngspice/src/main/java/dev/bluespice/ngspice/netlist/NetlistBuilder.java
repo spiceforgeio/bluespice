@@ -13,7 +13,17 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.OptionalDouble;
 
+/**
+ * Builds ngspice netlists from BlueSpice circuit graphs.
+ */
 public final class NetlistBuilder {
+    /**
+     * Built netlist plus metadata needed to extract simulator vectors.
+     *
+     * @param lines netlist lines passed to ngspice
+     * @param nodeNames SPICE node names to extract
+     * @param branchComponents SPICE component ids with branch-current vectors
+     */
     public record BuiltNetlist(List<String> lines, List<String> nodeNames, List<String> branchComponents) {
         public BuiltNetlist {
             lines = List.copyOf(Objects.requireNonNull(lines, "lines"));
@@ -21,19 +31,31 @@ public final class NetlistBuilder {
             branchComponents = List.copyOf(Objects.requireNonNull(branchComponents, "branchComponents"));
         }
 
+        /**
+         * Returns the netlist as newline-terminated text.
+         */
         public String text() {
             return String.join(System.lineSeparator(), lines) + System.lineSeparator();
         }
     }
 
+    /**
+     * Builds newline-terminated netlist text.
+     */
     public String build(Circuit circuit) {
         return buildDetailed(circuit).text();
     }
 
+    /**
+     * Builds a netlist and vector-extraction metadata.
+     */
     public BuiltNetlist buildDetailed(Circuit circuit) {
         return buildDetailed(circuit, CapturedIcState.EMPTY);
     }
 
+    /**
+     * Builds a netlist with optional transient initial-condition injection.
+     */
     public BuiltNetlist buildDetailed(Circuit circuit, CapturedIcState ic) {
         Objects.requireNonNull(circuit, "circuit");
         Objects.requireNonNull(ic, "ic");
@@ -155,6 +177,9 @@ public final class NetlistBuilder {
         return id.startsWith(prefix) ? id : prefix + id;
     }
 
+    /**
+     * Returns the SPICE element id for a component.
+     */
     public static String spiceElementId(Component component) {
         return switch (component.type()) {
             case RESISTOR -> prefix(component, "R");
