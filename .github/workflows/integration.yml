@@ -38,7 +38,7 @@ jobs:
             curl
       - name: Install macOS native build dependencies
         if: runner.os == 'macOS'
-        run: brew install automake autoconf libtool bison flex pkg-config libomp
+        run: brew install automake autoconf libtool bison flex pkg-config
       - name: Cache ngspice
         uses: actions/cache@v4
         with:
@@ -121,7 +121,15 @@ jobs:
         run: ./gradlew test -Ptags=intg -x :bluespice-examples:test -Djna.library.path="${{ env.NATIVE_LIB_DIR }}" -Djava.library.path="${{ env.NATIVE_LIB_DIR }}"
       - name: Run integration tests on Windows
         if: runner.os == 'Windows'
-        run: .\gradlew.bat test -Ptags=intg -x :bluespice-examples:test -Djna.library.path="${{ env.NATIVE_LIB_DIR }}" -Djava.library.path="${{ env.NATIVE_LIB_DIR }}"
+        run: .\gradlew.bat test -Ptags=intg -x :bluespice-examples:test "-Djna.library.path=${{ env.NATIVE_LIB_DIR }}" "-Djava.library.path=${{ env.NATIVE_LIB_DIR }}"
+      - name: Upload integration test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            **/build/reports/tests/test/
+            **/build/test-results/test/
       - name: Upload native library
         uses: actions/upload-artifact@v4
         with:

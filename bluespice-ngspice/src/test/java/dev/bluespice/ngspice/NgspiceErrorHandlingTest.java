@@ -59,7 +59,7 @@ class NgspiceErrorHandlingTest {
         assertThrows(SimulationTimeoutException.class, () -> {
             try (NgspiceEngine engine = NgspiceEngine.load(config(Duration.ofMillis(1)));
                     var session = engine.openSession(Circuits.rcSmall())) {
-                session.runTransient(new TransientConfig(1.0E-5, 1.0, 0.0, true));
+                session.runTransient(new TransientConfig(1.0E-6, 10.0, 0.0, true));
             }
         });
     }

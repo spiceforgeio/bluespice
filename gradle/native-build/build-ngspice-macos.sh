@@ -25,15 +25,10 @@ echo "${SHA256}  ${TARBALL}" | shasum -a 256 --check -
 rm -rf "${SRC_DIR}"
 tar -xzf "${TARBALL}" -C "${WORK_DIR}"
 
-LIBOMP="${LIBOMP_PREFIX:-$(brew --prefix libomp)}"
-
 cd "${SRC_DIR}"
 ./configure \
   --with-ngshared \
   --enable-xspice \
-  --enable-openmp \
-  CFLAGS="-I${LIBOMP}/include" \
-  LDFLAGS="-L${LIBOMP}/lib" \
   --prefix="${PREFIX}"
 make -j"$(sysctl -n hw.ncpu)"
 make install
