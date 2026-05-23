@@ -1,6 +1,7 @@
 package dev.bluespice.testcommon;
 
 import dev.bluespice.core.sim.OperatingPointResult;
+import dev.bluespice.core.sim.TransientResult;
 import org.junit.jupiter.api.Assertions;
 
 public final class SimulationAssertions {
@@ -16,6 +17,15 @@ public final class SimulationAssertions {
         Double actual = r.branchCurrents().get(componentId);
         Assertions.assertNotNull(actual, "missing branch current: " + componentId);
         Assertions.assertEquals(expected, actual, Math.abs(expected) * tolerancePct);
+    }
+
+    public static void assertVoltageAt(
+            TransientResult r,
+            String node,
+            double time,
+            double expected,
+            double tolerancePct) {
+        Assertions.assertEquals(expected, r.voltageAt(node, time), Math.abs(expected) * tolerancePct);
     }
 
     public static double tolerancePct(double pct) {

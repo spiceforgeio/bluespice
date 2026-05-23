@@ -17,9 +17,11 @@ import java.util.concurrent.TimeUnit;
 
 public final class WorkerChannel implements AutoCloseable {
     private final EngineConfig config;
-    private Process process;
-    private BufferedWriter writer;
-    private BufferedReader reader;
+    private volatile Process process;
+    private volatile BufferedWriter writer;
+    private volatile BufferedReader reader;
+    private final Object writeLock = new Object();
+    private final Object readLock = new Object();
 
     public WorkerChannel(EngineConfig config) {
         this.config = Objects.requireNonNull(config, "config");
@@ -40,26 +42,27 @@ public final class WorkerChannel implements AutoCloseable {
         }
     }
 
-    public synchronized WorkerProtocol.Response send(WorkerProtocol.Command command) {
+    public WorkerProtocol.Response send(WorkerProtocol.Command command) {
         Objects.requireNonNull(command, "command");
-        if (!isAlive()) {
-            throw new WorkerCrashException("ngspice worker is not running");
-        }
-        try {
-            writer.write(WorkerProtocol.serializeCommand(command));
-            writer.newLine();
-            writer.flush();
-            String response = reader.readLine();
-            if (response == null) {
-                throw new WorkerCrashException("ngspice worker terminated before sending a response");
+        writeCommand(command);
+        synchronized (readLock) {
+            try {
+                String response = reader.readLine();
+                if (response == null) {
+                    throw new WorkerCrashException("ngspice worker terminated before sending a response");
+                }
+                return WorkerProtocol.deserializeResponse(response);
+            } catch (IOException e) {
+                throw new WorkerCrashException("failed to communicate with ngspice worker", e);
             }
-            return WorkerProtocol.deserializeResponse(response);
-        } catch (IOException e) {
-            throw new WorkerCrashException("failed to communicate with ngspice worker", e);
         }
     }
 
-    public synchronized boolean isAlive() {
+    public void sendWithoutResponse(WorkerProtocol.Command command) {
+        writeCommand(command);
+    }
+
+    public boolean isAlive() {
         return process != null && process.isAlive();
     }
 
@@ -88,6 +91,22 @@ public final class WorkerChannel implements AutoCloseable {
         }
         if (process != null && process.isAlive()) {
             process.destroyForcibly();
+        }
+    }
+
+    private void writeCommand(WorkerProtocol.Command command) {
+        Objects.requireNonNull(command, "command");
+        synchronized (writeLock) {
+            if (!isAlive()) {
+                throw new WorkerCrashException("ngspice worker is not running");
+            }
+            try {
+                writer.write(WorkerProtocol.serializeCommand(command));
+                writer.newLine();
+                writer.flush();
+            } catch (IOException e) {
+                throw new WorkerCrashException("failed to communicate with ngspice worker", e);
+            }
         }
     }
 

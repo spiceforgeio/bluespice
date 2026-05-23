@@ -2,9 +2,11 @@ package dev.bluespice.ngspice.result;
 
 import com.sun.jna.Pointer;
 import dev.bluespice.core.sim.OperatingPointResult;
+import dev.bluespice.core.sim.TransientResult;
 import dev.bluespice.ngspice.NgspiceLibrary;
 import dev.bluespice.ngspice.NgspiceVectorInfo;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -60,12 +62,72 @@ public final class VectorExtractor {
         return new OperatingPointResult(nodeVoltages, branchCurrents, complete, solveTime);
     }
 
+    public static TransientResult extractTransient(
+            List<String> nodeNames,
+            List<String> branchComponentIds,
+            boolean completed,
+            Duration solveTime) {
+        Objects.requireNonNull(nodeNames, "nodeNames");
+        Objects.requireNonNull(branchComponentIds, "branchComponentIds");
+        Objects.requireNonNull(solveTime, "solveTime");
+
+        double[] timePoints = findVectorArray("time").orElse(new double[] {0.0});
+        Map<String, double[]> nodeVoltages = new LinkedHashMap<>();
+        for (String nodeName : nodeNames) {
+            findVectorArray("v(" + nodeName + ")")
+                    .ifPresent(values -> nodeVoltages.put(nodeName, fitLength(values, timePoints.length)));
+        }
+
+        Map<String, double[]> branchCurrents = new LinkedHashMap<>();
+        for (String componentId : branchComponentIds) {
+            findVectorArray(componentId + "#branch")
+                    .ifPresent(values -> branchCurrents.put(componentId, fitLength(values, timePoints.length)));
+        }
+
+        return new TransientResult(timePoints, nodeVoltages, branchCurrents, completed, solveTime);
+    }
+
+    public static OptionalDouble findLastValue(String vectorName) {
+        java.util.Optional<double[]> values = findVectorArray(vectorName);
+        if (values.isEmpty()) {
+            return OptionalDouble.empty();
+        }
+        double[] array = values.get();
+        return OptionalDouble.of(array[array.length - 1]);
+    }
+
     private static OptionalDouble findVector(String vectorName) {
         Pointer pointer = findVectorPointer(vectorName);
         if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
             return OptionalDouble.empty();
         }
         return OptionalDouble.of(NgspiceVectorInfo.firstRealValue(pointer));
+    }
+
+    private static java.util.Optional<double[]> findVectorArray(String vectorName) {
+        Pointer pointer = findVectorPointer(vectorName);
+        if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(NgspiceVectorInfo.realValues(pointer));
+        } catch (IllegalStateException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private static double[] fitLength(double[] values, int length) {
+        if (values.length == length) {
+            return values;
+        }
+        if (values.length == 0) {
+            throw new IllegalStateException("ngspice vector has no real data");
+        }
+        double[] copy = Arrays.copyOf(values, length);
+        if (values.length < length) {
+            Arrays.fill(copy, values.length, length, values[values.length - 1]);
+        }
+        return copy;
     }
 
     private static Pointer findVectorPointer(String vectorName) {

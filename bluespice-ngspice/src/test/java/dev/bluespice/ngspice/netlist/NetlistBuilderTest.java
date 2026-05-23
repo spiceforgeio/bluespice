@@ -2,9 +2,11 @@ package dev.bluespice.ngspice.netlist;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.bluespice.ngspice.CapturedIcState;
 import dev.bluespice.testcommon.Circuits;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +42,17 @@ class NetlistBuilderTest {
     @Test
     void buildsMosfetSwitchGoldenNetlist() throws IOException {
         assertEquals(golden("mosfet-switch.sp"), builder.build(Circuits.mosfetSwitch()));
+    }
+
+    @Test
+    void injectsCapturedInitialConditions() {
+        String netlist = builder.buildDetailed(
+                Circuits.rlcSeries(),
+                new CapturedIcState(Map.of("n2", 1.25), Map.of("L1", 0.002)))
+                .text();
+
+        org.junit.jupiter.api.Assertions.assertTrue(netlist.contains("C1 n2 0 1.0E-6 IC=1.25"));
+        org.junit.jupiter.api.Assertions.assertTrue(netlist.contains("L1 n1 n2 1.0E-3 IC=2.0E-3"));
     }
 
     private String golden(String filename) throws IOException {

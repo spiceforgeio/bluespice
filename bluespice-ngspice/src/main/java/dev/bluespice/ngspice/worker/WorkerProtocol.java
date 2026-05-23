@@ -10,6 +10,7 @@ import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
+import dev.bluespice.ngspice.CapturedIcState;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -83,7 +84,11 @@ public final class WorkerProtocol {
 
         record RunOperatingPoint() implements Command {}
 
-        record RunTransient(TransientConfig config) implements Command {}
+        record RunTransient(TransientConfig config, boolean useInitialConditions) implements Command {
+            public RunTransient(TransientConfig config) {
+                this(config, false);
+            }
+        }
 
         record Alter(String componentId, ComponentValue newValue) implements Command {}
 
@@ -109,7 +114,11 @@ public final class WorkerProtocol {
 
         record ResultOp(OperatingPointResult result) implements Response {}
 
-        record ResultTran(TransientResult result) implements Response {}
+        record ResultTran(TransientResult result, CapturedIcState capturedIc) implements Response {
+            public ResultTran(TransientResult result) {
+                this(result, CapturedIcState.EMPTY);
+            }
+        }
 
         record Vector(String name, double[] values, Map<String, String> metadata) implements Response {}
     }

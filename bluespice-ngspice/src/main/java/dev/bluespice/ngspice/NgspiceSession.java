@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class NgspiceSession implements SimulationSession {
     private final Circuit circuit;
@@ -27,6 +28,10 @@ public final class NgspiceSession implements SimulationSession {
     private volatile boolean paramDirty;
     private boolean closed;
     private final List<WorkerProtocol.Command.Alter> pendingAlters = new ArrayList<>();
+    private final AtomicBoolean transientRunning = new AtomicBoolean(false);
+    private final Object transientLock = new Object();
+    private CapturedIcState lastCapturedIc = CapturedIcState.EMPTY;
+    private boolean icDirty;
 
     NgspiceSession(Circuit circuit, WorkerChannel worker) {
         this(circuit, worker, worker::close, true);
@@ -42,18 +47,7 @@ public final class NgspiceSession implements SimulationSession {
     @Override
     public synchronized OperatingPointResult runOperatingPoint() {
         ensureOpen();
-        if (topologyDirty) {
-            loadCircuit();
-            topologyDirty = false;
-            paramDirty = false;
-            pendingAlters.clear();
-        } else if (paramDirty) {
-            for (WorkerProtocol.Command.Alter alter : pendingAlters) {
-                expectOk(worker.send(alter));
-            }
-            paramDirty = false;
-            pendingAlters.clear();
-        }
+        flushDirtyState(false);
 
         WorkerProtocol.Response response = worker.send(new WorkerProtocol.Command.RunOperatingPoint());
         WorkerProtocol.Response.ResultOp result =
@@ -63,11 +57,49 @@ public final class NgspiceSession implements SimulationSession {
 
     @Override
     public TransientResult runTransient(TransientConfig config) {
-        throw new UnsupportedOperationException("transient simulation is planned for Phase 5");
+        Objects.requireNonNull(config, "config");
+        boolean useInitialConditions;
+        synchronized (this) {
+            ensureOpen();
+            useInitialConditions = flushDirtyState(true);
+            if (!transientRunning.compareAndSet(false, true)) {
+                throw new IllegalStateException("transient is already running");
+            }
+        }
+
+        try {
+            WorkerProtocol.Response response = worker.send(new WorkerProtocol.Command.RunTransient(config, useInitialConditions));
+            WorkerProtocol.Response.ResultTran result =
+                    expect(response, WorkerProtocol.Response.ResultTran.class, "RUN_TRAN");
+            synchronized (this) {
+                lastCapturedIc = result.capturedIc();
+                icDirty = !lastCapturedIc.isEmpty();
+            }
+            return result.result();
+        } finally {
+            transientRunning.set(false);
+            synchronized (transientLock) {
+                transientLock.notifyAll();
+            }
+        }
     }
 
     @Override
     public void cancelTransient() {
+        if (!transientRunning.get()) {
+            return;
+        }
+        worker.sendWithoutResponse(new WorkerProtocol.Command.BgHalt());
+        synchronized (transientLock) {
+            while (transientRunning.get()) {
+                try {
+                    transientLock.wait(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
     }
 
     @Override
@@ -76,6 +108,8 @@ public final class NgspiceSession implements SimulationSession {
         pendingAlters.clear();
         paramDirty = false;
         topologyDirty = true;
+        lastCapturedIc = CapturedIcState.EMPTY;
+        icDirty = false;
     }
 
     @Override
@@ -86,6 +120,7 @@ public final class NgspiceSession implements SimulationSession {
         if (isTransientRunning()) {
             cancelTransient();
         }
+        // Altering C or L changes the model value only; stored energy is carried by IC injection on restart.
         Component component = circuit.getComponent(componentId);
         pendingAlters.add(new WorkerProtocol.Command.Alter(alterTargetId(component, newValue), newValue));
         paramDirty = true;
@@ -98,7 +133,7 @@ public final class NgspiceSession implements SimulationSession {
 
     @Override
     public boolean isTransientRunning() {
-        return false;
+        return transientRunning.get();
     }
 
     @Override
@@ -110,8 +145,28 @@ public final class NgspiceSession implements SimulationSession {
         closeAction.run();
     }
 
-    private void loadCircuit() {
-        NetlistBuilder.BuiltNetlist netlist = netlistBuilder.buildDetailed(circuit);
+    private boolean flushDirtyState(boolean forTransient) {
+        boolean shouldInjectIc = forTransient && icDirty && !lastCapturedIc.isEmpty();
+        if (topologyDirty || shouldInjectIc) {
+            loadCircuit(shouldInjectIc ? lastCapturedIc : CapturedIcState.EMPTY);
+            topologyDirty = false;
+            paramDirty = false;
+            pendingAlters.clear();
+            icDirty = false;
+            return shouldInjectIc;
+        }
+        if (paramDirty) {
+            for (WorkerProtocol.Command.Alter alter : pendingAlters) {
+                expectOk(worker.send(alter));
+            }
+            paramDirty = false;
+            pendingAlters.clear();
+        }
+        return false;
+    }
+
+    private void loadCircuit(CapturedIcState ic) {
+        NetlistBuilder.BuiltNetlist netlist = netlistBuilder.buildDetailed(circuit, ic);
         expectOk(worker.send(new WorkerProtocol.Command.LoadCircuit(
                 netlist.lines(), netlist.nodeNames(), netlist.branchComponents())));
     }

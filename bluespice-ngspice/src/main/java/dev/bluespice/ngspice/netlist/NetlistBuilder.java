@@ -5,11 +5,13 @@ import dev.bluespice.core.circuit.Component;
 import dev.bluespice.core.circuit.ComponentType;
 import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.circuit.Node;
+import dev.bluespice.ngspice.CapturedIcState;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.OptionalDouble;
 
 public final class NetlistBuilder {
     public record BuiltNetlist(List<String> lines, List<String> nodeNames, List<String> branchComponents) {
@@ -29,7 +31,12 @@ public final class NetlistBuilder {
     }
 
     public BuiltNetlist buildDetailed(Circuit circuit) {
+        return buildDetailed(circuit, CapturedIcState.EMPTY);
+    }
+
+    public BuiltNetlist buildDetailed(Circuit circuit, CapturedIcState ic) {
         Objects.requireNonNull(circuit, "circuit");
+        Objects.requireNonNull(ic, "ic");
         NodeNumbering numbering = NodeNumbering.from(circuit);
         List<String> modelLines = new ArrayList<>();
         List<String> elementLines = new ArrayList<>();
@@ -39,7 +46,7 @@ public final class NetlistBuilder {
             if (modelLine != null) {
                 modelLines.add(modelLine);
             }
-            elementLines.add(elementLine(component, numbering));
+            elementLines.add(elementLine(component, numbering, ic));
         }
 
         List<String> lines = new ArrayList<>();
@@ -51,14 +58,12 @@ public final class NetlistBuilder {
         return new BuiltNetlist(lines, nodeNames(circuit.nodes(), numbering), branchComponents(circuit.components()));
     }
 
-    private String elementLine(Component component, NodeNumbering numbering) {
+    private String elementLine(Component component, NodeNumbering numbering, CapturedIcState ic) {
         return switch (component.type()) {
             case RESISTOR -> prefix(component, "R") + twoTerminal(component, numbering)
                     + " " + spiceDouble(resistance(component.value()));
-            case CAPACITOR -> prefix(component, "C") + twoTerminal(component, numbering)
-                    + " " + spiceDouble(capacitance(component.value()));
-            case INDUCTOR -> prefix(component, "L") + twoTerminal(component, numbering)
-                    + " " + spiceDouble(inductance(component.value()));
+            case CAPACITOR -> capacitorLine(component, numbering, ic);
+            case INDUCTOR -> inductorLine(component, numbering, ic);
             case VOLTAGE_SOURCE -> prefix(component, "V") + twoTerminal(component, numbering)
                     + " DC " + spiceDouble(dcVoltage(component.value()));
             case CURRENT_SOURCE -> prefix(component, "I") + twoTerminal(component, numbering)
@@ -74,6 +79,41 @@ public final class NetlistBuilder {
             case VCVS, VCCS, CCVS, CCCS, TRANSMISSION_LINE, XSPICE_BLOCK ->
                     throw new UnsupportedOperationException("netlist support not defined for " + component.type());
         };
+    }
+
+    private String capacitorLine(Component component, NodeNumbering numbering, CapturedIcState ic) {
+        String line = prefix(component, "C") + twoTerminal(component, numbering)
+                + " " + spiceDouble(capacitance(component.value()));
+        OptionalDouble initialVoltage = capacitorInitialVoltage(component, numbering, ic);
+        return initialVoltage.isPresent()
+                ? line + " IC=" + spiceDouble(initialVoltage.getAsDouble())
+                : line;
+    }
+
+    private String inductorLine(Component component, NodeNumbering numbering, CapturedIcState ic) {
+        String line = prefix(component, "L") + twoTerminal(component, numbering)
+                + " " + spiceDouble(inductance(component.value()));
+        Double initialCurrent = ic.inductorCurrents().get(spiceElementId(component));
+        return initialCurrent == null ? line : line + " IC=" + spiceDouble(initialCurrent);
+    }
+
+    private OptionalDouble capacitorInitialVoltage(Component component, NodeNumbering numbering, CapturedIcState ic) {
+        if (component.terminals().size() != 2) {
+            throw new IllegalArgumentException(component.id() + " requires 2 terminals");
+        }
+        Double positive = nodeIcVoltage(component.terminals().get(0), numbering, ic);
+        Double negative = nodeIcVoltage(component.terminals().get(1), numbering, ic);
+        if (positive == null || negative == null) {
+            return OptionalDouble.empty();
+        }
+        return OptionalDouble.of(positive - negative);
+    }
+
+    private Double nodeIcVoltage(Node node, NodeNumbering numbering, CapturedIcState ic) {
+        if (node.isGround()) {
+            return 0.0;
+        }
+        return ic.capacitorVoltages().get(numbering.spiceName(node));
     }
 
     private String modelLine(Component component) {

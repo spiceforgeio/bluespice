@@ -2,6 +2,9 @@ package dev.bluespice.ngspice.worker;
 
 import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.sim.OperatingPointResult;
+import dev.bluespice.core.sim.TransientConfig;
+import dev.bluespice.core.sim.TransientResult;
+import dev.bluespice.ngspice.CapturedIcState;
 import dev.bluespice.ngspice.NgspiceCallbacks;
 import dev.bluespice.ngspice.NgspiceLibrary;
 import dev.bluespice.ngspice.result.VectorExtractor;
@@ -13,15 +16,18 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public final class NgspiceWorker {
     private final WorkerCallbacks callbacks = new WorkerCallbacks();
     private final List<String> nodeNames = new ArrayList<>();
     private final List<String> branchComponents = new ArrayList<>();
+    private ActiveTransient activeTransient;
 
     private NgspiceWorker() {}
 
@@ -48,18 +54,53 @@ public final class NgspiceWorker {
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                WorkerProtocol.Command command = WorkerProtocol.deserializeCommand(line);
-                WorkerProtocol.Response response = handle(command);
-                writer.write(WorkerProtocol.serializeResponse(response));
-                writer.newLine();
-                writer.flush();
-                if (command instanceof WorkerProtocol.Command.Exit) {
+            boolean exit = false;
+            while (!exit) {
+                if (activeTransient != null) {
+                    exit = pollActiveTransient(reader, writer);
+                    continue;
+                }
+
+                String line = reader.readLine();
+                if (line == null) {
                     break;
                 }
+                WorkerProtocol.Command command = WorkerProtocol.deserializeCommand(line);
+                WorkerProtocol.Response response = handle(command);
+                if (response != null) {
+                    writeResponse(writer, response);
+                }
+                exit = command instanceof WorkerProtocol.Command.Exit;
             }
         }
+    }
+
+    private boolean pollActiveTransient(BufferedReader reader, BufferedWriter writer) throws IOException {
+        if (!callbacks.isBgRunning()) {
+            writeResponse(writer, finishActiveTransient());
+            activeTransient = null;
+            return false;
+        }
+        if (reader.ready()) {
+            String line = reader.readLine();
+            if (line == null) {
+                return true;
+            }
+            WorkerProtocol.Command command = WorkerProtocol.deserializeCommand(line);
+            WorkerProtocol.Response response = handle(command);
+            if (response != null) {
+                writeResponse(writer, response);
+            }
+            return command instanceof WorkerProtocol.Command.Exit;
+        }
+        callbacks.waitForBgThreadStop(100);
+        return false;
+    }
+
+    private void writeResponse(BufferedWriter writer, WorkerProtocol.Response response) throws IOException {
+        writer.write(WorkerProtocol.serializeResponse(response));
+        writer.newLine();
+        writer.flush();
     }
 
     private WorkerProtocol.Response handle(WorkerProtocol.Command command) {
@@ -67,7 +108,9 @@ public final class NgspiceWorker {
             return switch (command) {
                 case WorkerProtocol.Command.LoadCircuit loadCircuit -> loadCircuit(loadCircuit);
                 case WorkerProtocol.Command.RunOperatingPoint ignored -> runOperatingPoint();
+                case WorkerProtocol.Command.RunTransient runTransient -> runTransient(runTransient);
                 case WorkerProtocol.Command.Alter alter -> alter(alter.componentId(), alter.newValue());
+                case WorkerProtocol.Command.BgHalt ignored -> bgHalt();
                 case WorkerProtocol.Command.Exit ignored -> new WorkerProtocol.Response.Ok();
                 default -> new WorkerProtocol.Response.Error("command not implemented yet: "
                         + command.getClass().getSimpleName());
@@ -104,6 +147,81 @@ public final class NgspiceWorker {
         Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
         OperatingPointResult result = VectorExtractor.extractDcOp(nodeNames, branchComponents, elapsed);
         return new WorkerProtocol.Response.ResultOp(result);
+    }
+
+    private WorkerProtocol.Response runTransient(WorkerProtocol.Command.RunTransient command) {
+        if (activeTransient != null) {
+            return new WorkerProtocol.Response.Error("transient is already running");
+        }
+        TransientConfig config = command.config();
+        if (config.saveInitialDc() && !command.useInitialConditions()) {
+            int opCode = NgspiceLibrary.ngSpice_Command("op");
+            if (opCode != 0) {
+                return new WorkerProtocol.Response.Error("ngSpice_Command op failed with code " + opCode);
+            }
+        }
+
+        long started = System.nanoTime();
+        callbacks.markBgRunning();
+        String tranCommand = transientCommand(config, command.useInitialConditions());
+        int code = NgspiceLibrary.ngSpice_Command(tranCommand);
+        if (code != 0) {
+            callbacks.markBgStopped();
+            return new WorkerProtocol.Response.Error("ngSpice_Command " + tranCommand + " failed with code " + code);
+        }
+        activeTransient = new ActiveTransient(started);
+        return null;
+    }
+
+    private WorkerProtocol.Response bgHalt() {
+        if (activeTransient == null) {
+            return null;
+        }
+        activeTransient.cancelled = true;
+        int code = NgspiceLibrary.ngSpice_Command("bg_halt");
+        if (code != 0) {
+            return new WorkerProtocol.Response.Error("ngSpice_Command bg_halt failed with code " + code);
+        }
+        callbacks.markBgStopped();
+        return null;
+    }
+
+    private WorkerProtocol.Response finishActiveTransient() {
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - activeTransient.startedNanos);
+        boolean completed = !activeTransient.cancelled;
+        CapturedIcState icState = captureIcState();
+        TransientResult result = VectorExtractor.extractTransient(nodeNames, branchComponents, completed, elapsed);
+        if (completed) {
+            NgspiceLibrary.ngSpice_Command("bg_halt");
+        }
+        return new WorkerProtocol.Response.ResultTran(result, icState);
+    }
+
+    private CapturedIcState captureIcState() {
+        Map<String, Double> capacitorVoltages = new LinkedHashMap<>();
+        for (String nodeName : nodeNames) {
+            VectorExtractor.findLastValue("v(" + nodeName + ")")
+                    .ifPresent(value -> capacitorVoltages.put(nodeName, value));
+        }
+
+        Map<String, Double> inductorCurrents = new LinkedHashMap<>();
+        for (String componentId : branchComponents) {
+            if (componentId.toUpperCase(Locale.ROOT).startsWith("L")) {
+                VectorExtractor.findLastValue(componentId + "#branch")
+                        .ifPresent(value -> inductorCurrents.put(componentId, value));
+            }
+        }
+        return new CapturedIcState(capacitorVoltages, inductorCurrents);
+    }
+
+    private String transientCommand(TransientConfig config, boolean useInitialConditions) {
+        boolean useUic = useInitialConditions || !config.saveInitialDc();
+        return String.format(Locale.ROOT, "bg_tran %s %s %s %s%s",
+                config.stepSeconds(),
+                config.stopSeconds(),
+                config.startSeconds(),
+                config.stepSeconds(),
+                useUic ? " uic" : "");
     }
 
     private WorkerProtocol.Response alter(String componentId, ComponentValue newValue) {
@@ -179,6 +297,9 @@ public final class NgspiceWorker {
     }
 
     private static final class WorkerCallbacks {
+        private final Object bgLock = new Object();
+        private volatile boolean bgRunning;
+
         final NgspiceCallbacks.SendChar sendChar = (outputLine, id, userdata) -> {
             System.err.println(outputLine);
             return 0;
@@ -190,6 +311,51 @@ public final class NgspiceWorker {
         };
         final NgspiceCallbacks.SendData sendData = (vecvaluesall, count, id, userdata) -> 0;
         final NgspiceCallbacks.SendInitData sendInitData = (vecinfoall, id, userdata) -> 0;
-        final NgspiceCallbacks.BGThreadRunning bgThreadRunning = (running, id, userdata) -> 0;
+        final NgspiceCallbacks.BGThreadRunning bgThreadRunning = (running, id, userdata) -> {
+            synchronized (bgLock) {
+                // ngspice 44 passes false on thread start and true on exit.
+                bgRunning = !running;
+                bgLock.notifyAll();
+            }
+            return 0;
+        };
+
+        boolean isBgRunning() {
+            return bgRunning;
+        }
+
+        void markBgRunning() {
+            synchronized (bgLock) {
+                bgRunning = true;
+            }
+        }
+
+        void markBgStopped() {
+            synchronized (bgLock) {
+                bgRunning = false;
+                bgLock.notifyAll();
+            }
+        }
+
+        void waitForBgThreadStop(long millis) {
+            synchronized (bgLock) {
+                if (bgRunning) {
+                    try {
+                        bgLock.wait(millis);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        }
+    }
+
+    private static final class ActiveTransient {
+        final long startedNanos;
+        boolean cancelled;
+
+        ActiveTransient(long startedNanos) {
+            this.startedNanos = startedNanos;
+        }
     }
 }

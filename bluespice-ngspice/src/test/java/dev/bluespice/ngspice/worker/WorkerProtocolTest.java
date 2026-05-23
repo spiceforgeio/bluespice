@@ -8,6 +8,7 @@ import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
+import dev.bluespice.ngspice.CapturedIcState;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,12 +36,16 @@ class WorkerProtocolTest {
         roundTripResponse(new WorkerProtocol.Response.Error("failed"));
         roundTripResponse(new WorkerProtocol.Response.ResultOp(new OperatingPointResult(
                 Map.of("vout", 2.5), Map.of("V1", 0.01), true, Duration.ofMillis(2))));
-        roundTripResponse(new WorkerProtocol.Response.ResultTran(new TransientResult(
+        var tran = roundTripResponse(new WorkerProtocol.Response.ResultTran(new TransientResult(
                 new double[] {0.0, 1.0},
                 Map.of("vout", new double[] {0.0, 2.5}),
                 Map.of("V1", new double[] {0.0, 0.01}),
                 true,
-                Duration.ofMillis(3))));
+                Duration.ofMillis(3)),
+                new CapturedIcState(Map.of("vout", 2.5), Map.of("L1", 0.01))));
+        var decodedTran = assertInstanceOf(WorkerProtocol.Response.ResultTran.class, tran);
+        assertEquals(Map.of("vout", 2.5), decodedTran.capturedIc().capacitorVoltages());
+        assertEquals(Map.of("L1", 0.01), decodedTran.capturedIc().inductorCurrents());
 
         var vector = roundTripResponse(new WorkerProtocol.Response.Vector(
                 "vout", new double[] {1.0, 2.0}, Map.of("units", "V")));
