@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "bluespice",
+  "version": "${version}",
+  "name": "BlueSpice",
+  "description": "Circuit simulation for Minecraft via ngspice",
+  "authors": [],
+  "license": "Apache-2.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.bluespice.fabric.BlueSpiceFabricMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.21"
+  }
+}

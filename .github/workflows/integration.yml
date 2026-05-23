@@ -28,4 +28,8 @@ jobs:
             NGSPICE_SOURCE_URL="$ngspiceSourceUrl" \
             NGSPICE_SHA256="$ngspiceSha256" \
             ./gradle/native-build/build-ngspice-linux.sh
+      - name: Package Linux native library resource
+        run: |
+          mkdir -p bluespice-ngspice/src/main/resources/natives/linux-x86_64
+          cp /opt/ngspice/lib/libngspice.so bluespice-ngspice/src/main/resources/natives/linux-x86_64/libngspice.so
       - run: ./gradlew test -Ptags=intg -Djna.library.path=/opt/ngspice/lib -Djava.library.path=/opt/ngspice/lib

@@ -11,6 +11,11 @@ dependencies {
     testRuntimeOnly(libs.junit.engine)
 }
 
+val nativesDir = file("src/main/resources/natives")
+if (nativesDir.exists()) {
+    sourceSets.main.get().resources.srcDir("src/main/resources")
+}
+
 jacoco {
     toolVersion = libs.versions.jacoco.get()
 }
