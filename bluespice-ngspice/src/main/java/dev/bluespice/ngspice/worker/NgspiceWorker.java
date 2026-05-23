@@ -107,22 +107,38 @@ public final class NgspiceWorker {
     }
 
     private WorkerProtocol.Response alter(String componentId, ComponentValue newValue) {
-        String command = alterCommand(componentId, newValue);
-        int code = NgspiceLibrary.ngSpice_Command(command);
-        if (code != 0) {
-            return new WorkerProtocol.Response.Error("ngSpice_Command " + command + " failed with code " + code);
+        for (String command : alterCommands(componentId, newValue)) {
+            int code = NgspiceLibrary.ngSpice_Command(command);
+            if (code != 0) {
+                return new WorkerProtocol.Response.Error("ngSpice_Command " + command + " failed with code " + code);
+            }
         }
         return new WorkerProtocol.Response.Ok();
     }
 
     static String alterCommand(String componentId, ComponentValue newValue) {
+        List<String> commands = alterCommands(componentId, newValue);
+        if (commands.size() != 1) {
+            throw new UnsupportedOperationException(
+                    "alterCommand produced " + commands.size() + " commands for "
+                            + newValue.getClass().getSimpleName());
+        }
+        return commands.getFirst();
+    }
+
+    static List<String> alterCommands(String componentId, ComponentValue newValue) {
         String id = componentId.toLowerCase(Locale.ROOT);
         return switch (newValue) {
-            case ComponentValue.Resistance value -> "alter " + id + " " + value.ohms();
-            case ComponentValue.Capacitance value -> "alter " + id + " " + value.farads();
-            case ComponentValue.Inductance value -> "alter " + id + " " + value.henries();
-            case ComponentValue.DCVoltage value -> "alter " + id + " dc=" + value.volts();
-            case ComponentValue.DCCurrent value -> "alter " + id + " dc=" + value.amps();
+            case ComponentValue.Resistance value -> List.of("alter " + id + " " + value.ohms());
+            case ComponentValue.Capacitance value -> List.of("alter " + id + " " + value.farads());
+            case ComponentValue.Inductance value -> List.of("alter " + id + " " + value.henries());
+            case ComponentValue.DCVoltage value -> List.of("alter " + id + " dc=" + value.volts());
+            case ComponentValue.DCCurrent value -> List.of("alter " + id + " dc=" + value.amps());
+            case ComponentValue.SwitchState value -> List.of("alter " + id + " dc="
+                    + (value.closed() ? value.ron() : value.roff()));
+            case ComponentValue.ModelRef value -> value.params().entrySet().stream()
+                    .map(entry -> "altermod " + componentId + " " + entry.getKey() + "=" + entry.getValue())
+                    .toList();
             default -> throw new UnsupportedOperationException("alter not supported for " + newValue.getClass().getSimpleName());
         };
     }

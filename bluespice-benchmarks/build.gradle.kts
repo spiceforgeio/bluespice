@@ -10,7 +10,7 @@ dependencies {
 }
 
 jmh {
-    includes.set(listOf(project.findProperty("jmhInclude")?.toString() ?: ".*BindingOverheadBenchmark.*"))
+    includes.set(listOf(project.findProperty("jmhInclude")?.toString() ?: ".*AlterVsReloadBenchmark.*"))
     resultFormat.set("JSON")
     resultsFile.set(layout.buildDirectory.file("results/jmh/results.json"))
     jvmArgs.set(listOfNotNull(

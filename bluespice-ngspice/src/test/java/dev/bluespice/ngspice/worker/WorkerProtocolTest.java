@@ -9,6 +9,8 @@ import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Tag;
@@ -55,6 +57,20 @@ class WorkerProtocolTest {
         assertEquals(
                 "alter i1 dc=0.001",
                 NgspiceWorker.alterCommand("I1", new ComponentValue.DCCurrent(0.001)));
+    }
+
+    @Test
+    void alterCommandsCoverPhase4ValueTypes() {
+        assertEquals(
+                "alter vsw dc=1.0E9",
+                NgspiceWorker.alterCommand("VSW", new ComponentValue.SwitchState(false, 1.0, 1.0E9)));
+
+        Map<String, Double> params = new LinkedHashMap<>();
+        params.put("IS", 2.52E-9);
+        params.put("N", 1.752);
+        assertEquals(
+                List.of("altermod D1N4148 IS=2.52E-9", "altermod D1N4148 N=1.752"),
+                NgspiceWorker.alterCommands("D1N4148", new ComponentValue.ModelRef("D1N4148", params)));
     }
 
     @Test

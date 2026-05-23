@@ -73,6 +73,8 @@ public final class NgspiceSession implements SimulationSession {
     @Override
     public synchronized void onTopologyChanged() {
         ensureOpen();
+        pendingAlters.clear();
+        paramDirty = false;
         topologyDirty = true;
     }
 
@@ -85,7 +87,7 @@ public final class NgspiceSession implements SimulationSession {
             cancelTransient();
         }
         Component component = circuit.getComponent(componentId);
-        pendingAlters.add(new WorkerProtocol.Command.Alter(NetlistBuilder.spiceElementId(component), newValue));
+        pendingAlters.add(new WorkerProtocol.Command.Alter(alterTargetId(component, newValue), newValue));
         paramDirty = true;
     }
 
@@ -112,6 +114,37 @@ public final class NgspiceSession implements SimulationSession {
         NetlistBuilder.BuiltNetlist netlist = netlistBuilder.buildDetailed(circuit);
         expectOk(worker.send(new WorkerProtocol.Command.LoadCircuit(
                 netlist.lines(), netlist.nodeNames(), netlist.branchComponents())));
+    }
+
+    private String alterTargetId(Component component, ComponentValue newValue) {
+        if (newValue instanceof ComponentValue.ModelRef ref) {
+            return ref.modelName();
+        }
+        if (newValue instanceof ComponentValue.SwitchState) {
+            return controlVoltageSourceId(component);
+        }
+        return NetlistBuilder.spiceElementId(component);
+    }
+
+    private String controlVoltageSourceId(Component switchComponent) {
+        if (switchComponent.type() != ComponentType.SWITCH) {
+            throw new IllegalArgumentException(
+                    "SwitchState alters require a SWITCH component id, got " + switchComponent.type());
+        }
+        if (switchComponent.terminals().size() != 4) {
+            throw new IllegalArgumentException(switchComponent.id() + " requires 4 terminals");
+        }
+        Node controlPositive = switchComponent.terminals().get(2);
+        Node controlNegative = switchComponent.terminals().get(3);
+        for (Component component : circuit.components()) {
+            if (component.type() == ComponentType.VOLTAGE_SOURCE
+                    && component.terminals().size() == 2
+                    && component.terminals().get(0).equals(controlPositive)
+                    && component.terminals().get(1).equals(controlNegative)) {
+                return NetlistBuilder.spiceElementId(component);
+            }
+        }
+        throw new IllegalArgumentException("control voltage source not found for switch " + switchComponent.id());
     }
 
     private OperatingPointResult withDerivedBranchCurrents(OperatingPointResult result) {
