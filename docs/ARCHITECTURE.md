@@ -17,10 +17,9 @@
 8. [Incremental Update Strategy](#8-incremental-update-strategy)
 9. [Dirty-Region Simulation](#9-dirty-region-simulation)
 10. [Performance Characteristics](#10-performance-characteristics)
-11. [GPU Acceleration Findings](#11-gpu-acceleration-findings)
-12. [Build, Packaging, and Publishing](#12-build-packaging-and-publishing)
-13. [Test Architecture](#13-test-architecture)
-14. [Risks and Mitigations](#14-risks-and-mitigations)
+11. [Build, Packaging, and Publishing](#11-build-packaging-and-publishing)
+12. [Test Architecture](#12-test-architecture)
+13. [Risks and Mitigations](#13-risks-and-mitigations)
 
 ---
 
@@ -98,7 +97,6 @@ bluespice/
 |---|---|
 | `bluespice-core` | `dev.bluespice.core` |
 | `bluespice-ngspice` | `dev.bluespice.ngspice` |
-| `bluespice-test-common` | `dev.bluespice.testcommon` |
 
 ---
 
@@ -601,26 +599,7 @@ Run 50–100 short simulations on a dummy circuit per worker at startup to avoid
 
 ---
 
-## 11. GPU Acceleration Findings
-
-**ngspice (as of 2026) does not support GPU acceleration.** The core simulation kernel is a sparse direct solver (KLU) implemented in sequential C. There is no CUDA, OpenCL, HIP, or SYCL backend in the official source tree.
-
-### OpenMP
-
-ngspice can be compiled with `--enable-openmp`. This enables parallel evaluation of device models for circuits with many identical nonlinear devices. The sparse matrix solve remains sequential.
-
-### GPU relevance for typical circuits
-
-For circuits of 10–500 components, GPU acceleration provides no practical benefit:
-- PCIe transfer overhead alone exceeds total simulation time for small circuits
-- GPU-accelerated sparse solvers are designed for 10,000+ node matrices
-- JVM ↔ GPU memory management overhead would dominate
-
-Research projects (ParallelSpice, FSPICE, cuSolver integration) exist but are not maintained or production-ready as of 2026.
-
----
-
-## 12. Build, Packaging, and Publishing
+## 11. Build, Packaging, and Publishing
 
 ### Building ngspice
 
@@ -677,7 +656,29 @@ JNA's `Native.load("ngspice", ...)` applies OS-specific prefix/suffix rules auto
 
 ### Packaging
 
-**Option A: Fat JAR (default for initial releases)**
+Both artifact forms are published. They serve different audiences.
+
+#### Classifier JARs — primary Maven Central artifact
+
+Standard Maven pattern for native-bundling libraries (same as LWJGL, JavaFX, Netty). Each JAR contains only the binary for its target platform; users download only what they need.
+
+```
+bluespice-ngspice-X.Y.Z.jar               (pure Java, no natives)
+bluespice-ngspice-X.Y.Z-linux-x86_64.jar
+bluespice-ngspice-X.Y.Z-windows-x86_64.jar
+bluespice-ngspice-X.Y.Z-macos-x86_64.jar
+bluespice-ngspice-X.Y.Z-macos-aarch64.jar
+```
+
+Gradle usage:
+```kotlin
+implementation("dev.bluespice:bluespice-ngspice:X.Y.Z")
+runtimeOnly("dev.bluespice:bluespice-ngspice:X.Y.Z:$osClassifier")
+```
+
+#### Fat JAR (`-all`) — Minecraft mod / self-contained deployment artifact
+
+Also published to Maven Central. All platform natives bundled in a single JAR. Required for Minecraft mod distribution via Modrinth and CurseForge, where the mod JAR is downloaded by players on any OS and no platform-specific dependency resolution is available at runtime. Mod authors bundle this into their mod JAR using the Shadow plugin.
 
 ```
 bluespice-ngspice-X.Y.Z-all.jar
@@ -688,14 +689,9 @@ bluespice-ngspice-X.Y.Z-all.jar
     macos-aarch64/libngspice.dylib
 ```
 
-**Option B: Classifier JARs (distribution)**
-
-```
-bluespice-ngspice-X.Y.Z.jar             (pure Java)
-bluespice-ngspice-X.Y.Z-linux-x86_64.jar
-bluespice-ngspice-X.Y.Z-windows-x86_64.jar
-bluespice-ngspice-X.Y.Z-macos-x86_64.jar
-bluespice-ngspice-X.Y.Z-macos-aarch64.jar
+Gradle usage:
+```kotlin
+implementation("dev.bluespice:bluespice-ngspice:X.Y.Z:all")
 ```
 
 ### Publishing
@@ -715,11 +711,11 @@ Published to Maven Central via `com.gradleup.nmcp`. Snapshot releases go to GitH
 | ngspice | BSD-3-Clause + LGPL-2.0 | Must include license text; use shared library to satisfy LGPL |
 | Java library | Apache-2.0 | Compatible with LGPL bundling |
 
-The LGPL portion of ngspice requires users to be able to replace `libngspice.so` with their own build. Using the shared library (Options A/B above) satisfies this because the library is separate from the Java code.
+The LGPL portion of ngspice requires users to be able to replace `libngspice.so` with their own build. Distributing ngspice as a shared library (separate from the Java bytecode) satisfies this requirement for both artifact forms.
 
 ---
 
-## 13. Test Architecture
+## 12. Test Architecture
 
 ### Test categories
 
@@ -828,7 +824,7 @@ Expected values were generated from `SubprocessEngine` (CLI oracle) and committe
 
 ---
 
-## 14. Risks and Mitigations
+## 13. Risks and Mitigations
 
 | Risk | Severity | Status |
 |---|---|---|
