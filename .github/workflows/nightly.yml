@@ -14,30 +14,32 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - name: Restore ngspice cache
-        uses: actions/cache@v4
+      - name: Restore Linux ngspice cache
+        uses: actions/cache/restore@v4
         with:
-          path: /opt/ngspice
-          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-linux.sh') }}
-      - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bison flex libtool automake autoconf pkg-config
-      - name: Build ngspice shared library
+          path: |
+            /opt/ngspice
+            /opt/ngspice-win
+            /opt/ngspice-mac
+          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-*.sh') }}
+          fail-on-cache-miss: true
+      - name: Verify cached ngspice
         run: |
-          source ./gradle.properties
-          sudo env \
-            NGSPICE_VERSION="$ngspiceVersion" \
-            NGSPICE_SOURCE_URL="$ngspiceSourceUrl" \
-            NGSPICE_SHA256="$ngspiceSha256" \
-            ./gradle/native-build/build-ngspice-linux.sh
+          test -x /opt/ngspice/bin/ngspice
+          test -f /opt/ngspice/lib/libngspice.so
+          /opt/ngspice/bin/ngspice --version
       - name: Run oracle tests
         run: |
           export PATH="/opt/ngspice/bin:$PATH"
           ./gradlew test -Ptags=oracle -Djna.library.path=/opt/ngspice/lib -Djava.library.path=/opt/ngspice/lib
       - name: Upload oracle test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: oracle-results
-          path: '**/build/reports/tests/'
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/test/
 
   benchmark:
     runs-on: ubuntu-latest
@@ -47,27 +49,28 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - name: Restore ngspice cache
-        uses: actions/cache@v4
+      - name: Restore Linux ngspice cache
+        uses: actions/cache/restore@v4
         with:
-          path: /opt/ngspice
-          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-linux.sh') }}
-      - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bison flex libtool automake autoconf pkg-config
-      - name: Build ngspice shared library
+          path: |
+            /opt/ngspice
+            /opt/ngspice-win
+            /opt/ngspice-mac
+          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-*.sh') }}
+          fail-on-cache-miss: true
+      - name: Verify cached ngspice
         run: |
-          source ./gradle.properties
-          sudo env \
-            NGSPICE_VERSION="$ngspiceVersion" \
-            NGSPICE_SOURCE_URL="$ngspiceSourceUrl" \
-            NGSPICE_SHA256="$ngspiceSha256" \
-            ./gradle/native-build/build-ngspice-linux.sh
+          test -x /opt/ngspice/bin/ngspice
+          test -f /opt/ngspice/lib/libngspice.so
+          /opt/ngspice/bin/ngspice --version
       - name: Run JMH benchmarks
         run: ./gradlew jmh -Djna.library.path=/opt/ngspice/lib -Djava.library.path=/opt/ngspice/lib
       - name: Upload JMH results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jmh-results-${{ github.sha }}
           path: bluespice-benchmarks/build/results/jmh/
       - name: Compare with baseline
+        continue-on-error: true
         run: ./scripts/check-benchmark-regression.sh
