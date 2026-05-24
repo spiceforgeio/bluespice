@@ -9,7 +9,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            ngspice_build_script: gradle/native-build/build-ngspice-linux.sh
+          - os: windows-latest
+            ngspice_build_script: gradle/native-build/build-ngspice-windows.sh
+          - os: macos-latest
+            ngspice_build_script: gradle/native-build/build-ngspice-macos.sh
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +52,7 @@ jobs:
             /opt/ngspice
             /opt/ngspice-win
             /opt/ngspice-mac
-          key: ngspice-${{ runner.os }}-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-*.sh') }}
+          key: ngspice-${{ runner.os }}-${{ hashFiles('gradle.properties', matrix.ngspice_build_script) }}
       - name: Build Linux ngspice shared library
         if: runner.os == 'Linux'
         run: |

@@ -21,7 +21,7 @@ jobs:
             /opt/ngspice
             /opt/ngspice-win
             /opt/ngspice-mac
-          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-*.sh') }}
+          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-linux.sh') }}
           fail-on-cache-miss: true
       - name: Verify cached ngspice
         run: |
@@ -56,7 +56,7 @@ jobs:
             /opt/ngspice
             /opt/ngspice-win
             /opt/ngspice-mac
-          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-*.sh') }}
+          key: ngspice-Linux-${{ hashFiles('gradle.properties', 'gradle/native-build/build-ngspice-linux.sh') }}
           fail-on-cache-miss: true
       - name: Verify cached ngspice
         run: |
