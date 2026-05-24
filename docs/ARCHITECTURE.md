@@ -672,8 +672,8 @@ bluespice-ngspice-X.Y.Z-macos-aarch64.jar
 
 Gradle usage:
 ```kotlin
-implementation("dev.bluespice:bluespice-ngspice:X.Y.Z")
-runtimeOnly("dev.bluespice:bluespice-ngspice:X.Y.Z:$osClassifier")
+implementation("io.github.spiceforgeio:bluespice-ngspice:X.Y.Z")
+runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:X.Y.Z:$osClassifier")
 ```
 
 #### Fat JAR (`-all`) — Minecraft mod / self-contained deployment artifact
@@ -691,13 +691,13 @@ bluespice-ngspice-X.Y.Z-all.jar
 
 Gradle usage:
 ```kotlin
-implementation("dev.bluespice:bluespice-ngspice:X.Y.Z:all")
+implementation("io.github.spiceforgeio:bluespice-ngspice:X.Y.Z:all")
 ```
 
 ### Publishing
 
 ```
-groupId:    dev.bluespice
+groupId:    io.github.spiceforgeio
 artifactId: bluespice-core, bluespice-ngspice
 version:    0.1.0
 ```

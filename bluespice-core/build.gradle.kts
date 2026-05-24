@@ -32,7 +32,7 @@ tasks.check {
 publishing {
     publications {
         create<MavenPublication>("maven") {
-            groupId = "dev.bluespice"
+            groupId = "io.github.spiceforgeio"
             artifactId = project.name
             version = project.version.toString()
             from(components["java"])

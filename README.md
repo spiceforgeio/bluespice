@@ -37,9 +37,9 @@ repositories {
 }
 
 dependencies {
-    implementation("dev.bluespice:bluespice-core:0.1.0-SNAPSHOT")
-    implementation("dev.bluespice:bluespice-ngspice:0.1.0-SNAPSHOT")
-    runtimeOnly("dev.bluespice:bluespice-ngspice:0.1.0-SNAPSHOT:$osClassifier") // e.g. linux-x86_64
+    implementation("io.github.spiceforgeio:bluespice-core:0.1.0-SNAPSHOT")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0-SNAPSHOT")
+    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.1.0-SNAPSHOT:$osClassifier") // e.g. linux-x86_64
 }
 ```
 
@@ -47,8 +47,8 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("dev.bluespice:bluespice-core:0.1.0-SNAPSHOT")
-    implementation("dev.bluespice:bluespice-ngspice:0.1.0-SNAPSHOT:all")
+    implementation("io.github.spiceforgeio:bluespice-core:0.1.0-SNAPSHOT")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0-SNAPSHOT:all")
 }
 ```
 

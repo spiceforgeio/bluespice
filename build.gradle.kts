@@ -6,7 +6,7 @@ plugins {
     base
 }
 
-group = "dev.bluespice"
+group = "io.github.spiceforgeio"
 version = providers.gradleProperty("version").orElse("0.1.0-SNAPSHOT").get()
 
 subprojects {
