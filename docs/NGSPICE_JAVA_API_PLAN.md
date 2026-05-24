@@ -69,9 +69,7 @@ and currents for rendering and gameplay effects. Circuits can be modified at run
 
 BlueSpice core (`bluespice-core`, `bluespice-ngspice`) is intentionally mod-framework-agnostic.
 Fabric and NeoForge integration modules live in separate repositories and depend on the
-published Maven Central artifacts. The `bluespice-fabric` module is maintained in this
-monorepo during initial development and extracted to a standalone repository after the
-core API stabilises (Phase 11).
+published Maven Central artifacts.
 
 ### 2.3 Secondary target use cases
 
@@ -132,15 +130,6 @@ bluespice-ngspice/
       NetlistLine.java
     result/
       VectorExtractor.java
-
-bluespice-fabric/
-  src/main/java/dev/bluespice/fabric/
-    BlueSpiceFabricMod.java          (Fabric ModInitializer entry point)
-    FabricNativeLoader.java          (loads libngspice from mod jar on root CL)
-    FabricEngineProvider.java        (provides NgspiceEngine via Fabric lifecycle)
-  src/main/resources/
-    fabric.mod.json
-    bluespice.mixins.json
 
 bluespice-benchmarks/
   src/jmh/java/dev/bluespice/bench/
@@ -1279,12 +1268,6 @@ bluespice-ngspice/
   build.gradle.kts
   src/
     main/java/
-bluespice-fabric/
-  build.gradle.kts       <- depends on Fabric API; not published to Maven Central
-  src/
-    main/java/
-    main/resources/
-      fabric.mod.json
 bluespice-benchmarks/
   build.gradle.kts    <- applies JMH plugin
 bluespice-examples/
@@ -1697,7 +1680,7 @@ Coverage is measured with JaCoCo. Native code inside the worker process is exclu
 **Goal:** Establish the full shape of the library and the test harness before any simulation code is written. All later phases build on top of this foundation.
 
 **Project structure:**
-- Gradle multi-module project: `bluespice-core`, `bluespice-ngspice`, `bluespice-test-common`, `bluespice-benchmarks`, `bluespice-examples`, `bluespice-fabric` (stub)
+- Gradle multi-module project: `bluespice-core`, `bluespice-ngspice`, `bluespice-test-common`, `bluespice-benchmarks`, `bluespice-examples`
 - `libs.versions.toml` with pinned versions for JNA, JUnit 5, JaCoCo, JMH
 
 **API skeleton:**

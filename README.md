@@ -45,7 +45,6 @@ Running integration tests requires a built ngspice shared library:
 | `bluespice-ngspice` | ngspice backend: JNA binding, worker pool, netlist builder |
 | `bluespice-test-common` | Shared test fixtures |
 | `bluespice-examples` | Standalone usage examples |
-| `bluespice-fabric` | Fabric mod skeleton (experimental; will be extracted in Phase 12) |
 | `bluespice-benchmarks` | JMH benchmarks |
 
 ## Licence
