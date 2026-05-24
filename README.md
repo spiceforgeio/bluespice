@@ -4,24 +4,74 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 
 ## Features
 
-- Build circuits programmatically with a typed Java API
-- Run DC operating-point and transient simulations
-- Multi-session worker pool with automatic crash recovery
-- Dirty-region detection routes independent subcircuits to parallel workers
-- Fat JAR with embedded native libraries for Linux, Windows, and macOS
+- Typed Java API for building and modifying circuits at runtime
+- DC operating-point and transient simulations
+- Worker-process pool — each session runs in a dedicated child JVM, providing true parallelism and crash isolation
+- Incremental parameter updates via `alter`/`altermod` — no full netlist reload needed for value changes
+- Dirty-region routing dispatches topologically disconnected subcircuits to parallel workers
+- Published as platform-specific classifier JARs (Maven standard) and as an all-platforms fat JAR for Minecraft mods and self-contained deployments
+- Linux, Windows, macOS — x86_64 and aarch64
 
 ## Requirements
 
 - Java 21+
-- ngspice 44 shared library (bundled in the fat JAR, or supply your own)
+- ngspice 44 shared library — bundled in the published artifacts, or supply your own via `EngineConfig`
+
+## Dependency
+
+The library is not yet available on Maven Central. Snapshot releases are published to GitHub Packages.
+
+> Snapshot JARs on GitHub Packages do not bundle native libraries. Native-packaged
+> artifacts are assembled by the CI `package` job and attached as workflow artifacts.
+
+### Gradle — classifier JAR (standard)
+
+```kotlin
+repositories {
+    maven("https://maven.pkg.github.com/spiceforgeio/bluespice") {
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
+}
+
+dependencies {
+    implementation("dev.bluespice:bluespice-core:0.1.0-SNAPSHOT")
+    implementation("dev.bluespice:bluespice-ngspice:0.1.0-SNAPSHOT")
+    runtimeOnly("dev.bluespice:bluespice-ngspice:0.1.0-SNAPSHOT:$osClassifier") // e.g. linux-x86_64
+}
+```
+
+### Gradle — fat JAR (Minecraft mods / self-contained)
+
+```kotlin
+dependencies {
+    implementation("dev.bluespice:bluespice-core:0.1.0-SNAPSHOT")
+    implementation("dev.bluespice:bluespice-ngspice:0.1.0-SNAPSHOT:all")
+}
+```
 
 ## Quick start
 
-> Coordinates will be available on Maven Central after Phase 11.
-> For now, build from source or use GitHub Packages snapshots.
-> **Note:** GitHub Packages snapshots are headless: they contain no embedded native
-> libraries. Native-packaged artifacts are assembled by the CI `package` job and will
-> be available on Maven Central in Phase 11.
+```java
+Circuit circuit = Circuit.empty("voltage-divider");
+Node vin  = circuit.addNode("vin");
+Node vmid = circuit.addNode("vmid");
+
+circuit.addComponent(VOLTAGE_SOURCE, "V1", new ComponentValue.DCVoltage(10.0),    vin,  circuit.ground());
+circuit.addComponent(RESISTOR,       "R1", new ComponentValue.Resistance(1_000.0), vin,  vmid);
+circuit.addComponent(RESISTOR,       "R2", new ComponentValue.Resistance(1_000.0), vmid, circuit.ground());
+
+try (NgspiceEngine engine = NgspiceEngine.load(EngineConfig.defaults());
+     SimulationSession session = engine.openSession(circuit)) {
+
+    var result = session.runOperatingPoint();
+    result.nodeVoltages().forEach((node, v) ->
+            System.out.printf("v(%s) = %.3f V%n", node, v));
+    // v(vmid) = 5.000 V
+}
+```
 
 ## Building from source
 
@@ -29,7 +79,7 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 ./gradlew build
 ```
 
-Running integration tests requires a built ngspice shared library:
+Integration tests require a built ngspice shared library on the library path:
 
 ```bash
 ./gradlew test -Ptags=intg \
@@ -37,15 +87,17 @@ Running integration tests requires a built ngspice shared library:
   -Djava.library.path=/opt/ngspice/lib
 ```
 
+See `gradle/native-build/` for scripts that compile ngspice from source on Linux, Windows, and macOS.
+
 ## Modules
 
-| Module | Description |
-|---|---|
-| `bluespice-core` | Public API: circuit model, simulation interfaces, exceptions |
-| `bluespice-ngspice` | ngspice backend: JNA binding, worker pool, netlist builder |
-| `bluespice-test-common` | Shared test fixtures |
-| `bluespice-examples` | Standalone usage examples |
-| `bluespice-benchmarks` | JMH benchmarks |
+| Module | Published | Description |
+|---|---|---|
+| `bluespice-core` | Yes | Public API: circuit model, simulation interfaces, exceptions |
+| `bluespice-ngspice` | Yes | ngspice backend: JNA binding, worker pool, netlist builder |
+| `bluespice-examples` | No | Standalone usage examples |
+| `bluespice-benchmarks` | No | JMH benchmarks |
+| `bluespice-test-common` | No | Shared test fixtures (internal) |
 
 ## Licence
 
