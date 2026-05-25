@@ -24,7 +24,14 @@ jobs:
         run: |
           echo "GitHub Packages publishes the Maven snapshot artifacts from this checkout."
           echo "Native-bundled releases are published to Maven Central by release.yml."
+      - name: Read project version
+        id: version
+        shell: bash
+        run: |
+          source gradle.properties
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Publish to GitHub Packages
+        if: endsWith(steps.version.outputs.version, '-SNAPSHOT')
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
