@@ -4,6 +4,8 @@ import org.gradle.testing.jacoco.tasks.JacocoReport
 
 plugins {
     base
+    alias(libs.plugins.nmcp.aggregation)
+    alias(libs.plugins.nmcp) apply false
 }
 
 group = "io.github.spiceforgeio"
@@ -57,6 +59,20 @@ configure(listOf(project(":bluespice-core"), project(":bluespice-ngspice"))) {
             xml.required.set(true)
             html.required.set(true)
         }
+    }
+}
+
+dependencies {
+    nmcpAggregation(project(":bluespice-core"))
+    nmcpAggregation(project(":bluespice-ngspice"))
+}
+
+nmcpAggregation {
+    centralPortal {
+        username = System.getenv("CENTRAL_USERNAME") ?: ""
+        password = System.getenv("CENTRAL_PASSWORD") ?: ""
+        publishingType = "AUTOMATIC"
+        publicationName = "bluespice:$version"
     }
 }
 
