@@ -18,12 +18,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      # Snapshot artifacts published here are pure-Java. Native-bundled releases
-      # go to Maven Central via release.yml.
+      # Snapshot artifacts published here are pure Java. Native classifier and
+      # all-platform artifacts are release-only and require staged ngspice builds.
       - name: Document native artifact mode
         run: |
-          echo "GitHub Packages publishes the Maven snapshot artifacts from this checkout."
-          echo "Native-bundled releases are published to Maven Central by release.yml."
+          echo "GitHub Packages publishes pure-Java snapshot artifacts from this checkout."
+          echo "Native classifier and all-platform artifacts are published by release.yml."
       - name: Read project version
         id: version
         shell: bash

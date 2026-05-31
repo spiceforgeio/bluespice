@@ -725,8 +725,8 @@ The LGPL portion of ngspice requires users to be able to replace `libngspice.so`
 |---|---|---|---|---|
 | Unit | `@Tag("unit")` | No | Fast | Every push |
 | Integration | `@Tag("intg")` | Yes | Medium | Every push (Linux) |
-| Oracle | `@Tag("oracle")` | Yes (both backends) | Slow | Nightly |
-| Benchmark | (JMH, separate) | Yes | Very slow | Nightly |
+| Oracle | `@Tag("oracle")` | Yes (both backends) | Slow | Manual workflow |
+| Benchmark | (JMH, separate) | Yes | Very slow | Manual/local |
 
 `./gradlew test` (no flag) runs only unit tests — safe for developer machines without ngspice installed.
 

@@ -21,6 +21,36 @@ jacoco {
     toolVersion = libs.versions.jacoco.get()
 }
 
+val nativePlatforms = linkedMapOf(
+    "linux-x86_64" to "libngspice.so",
+    "linux-aarch64" to "libngspice.so",
+    "windows-x86_64" to "ngspice.dll",
+    "macos-x86_64" to "libngspice.dylib",
+    "macos-aarch64" to "libngspice.dylib",
+)
+val nativeResourceRoot = layout.buildDirectory.dir("native-resources/natives")
+val publishNativeArtifacts = providers.gradleProperty("publishNativeArtifacts")
+    .map(String::toBoolean)
+    .orElse(false)
+
+val verifyNativeResources by tasks.registering {
+    group = "verification"
+    description = "Verifies all native libraries required for native artifact publication are staged."
+    inputs.dir(nativeResourceRoot)
+    doLast {
+        val root = nativeResourceRoot.get().asFile
+        val missing = nativePlatforms
+            .map { (platform, fileName) -> platform to root.resolve("$platform/$fileName") }
+            .filterNot { (_, file) -> file.isFile }
+        check(missing.isEmpty()) {
+            missing.joinToString(
+                prefix = "Missing native libraries for publication: ",
+                separator = ", ",
+            ) { (platform, file) -> "$platform (${file.relativeTo(projectDir)})" }
+        }
+    }
+}
+
 val allJar by tasks.registering(Jar::class) {
     group = "build"
     description = "Assembles a fat JAR with BlueSpice ngspice classes, runtime dependencies, and native resources."
@@ -28,19 +58,21 @@ val allJar by tasks.registering(Jar::class) {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn(configurations.runtimeClasspath)
     from(sourceSets.main.get().output)
+    from(nativeResourceRoot) {
+        into("natives")
+    }
     from(configurations.runtimeClasspath.map { classpath ->
         classpath.filter { it.isFile }.map { zipTree(it) }
     })
     exclude("META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.SF")
 }
 
-val nativePlatforms = listOf("linux-x86_64", "linux-aarch64", "windows-x86_64", "macos-x86_64", "macos-aarch64")
-val nativeJars = nativePlatforms.map { platform ->
+val nativeJars = nativePlatforms.map { (platform, _) ->
     tasks.register<Jar>("native${platform.replace("-", "_").replaceFirstChar { it.uppercase() }}Jar") {
         group = "build"
         description = "Assembles the $platform native classifier JAR when its binary is present."
         archiveClassifier.set(platform)
-        val platformDir = layout.projectDirectory.dir("src/main/resources/natives/$platform")
+        val platformDir = nativeResourceRoot.map { it.dir(platform) }
         from(platformDir) {
             into("natives/$platform")
         }
@@ -48,8 +80,21 @@ val nativeJars = nativePlatforms.map { platform ->
 }
 
 artifacts {
-    add("archives", allJar)
-    nativeJars.forEach { add("archives", it) }
+    if (publishNativeArtifacts.get()) {
+        add("archives", allJar)
+        nativeJars.forEach { add("archives", it) }
+    }
+}
+
+if (publishNativeArtifacts.get()) {
+    allJar.configure {
+        dependsOn(verifyNativeResources)
+    }
+    nativeJars.forEach {
+        it.configure {
+            dependsOn(verifyNativeResources)
+        }
+    }
 }
 
 publishing {
@@ -59,8 +104,10 @@ publishing {
             artifactId = project.name
             version = project.version.toString()
             from(components["java"])
-            artifact(allJar)
-            nativeJars.forEach { artifact(it) }
+            if (publishNativeArtifacts.get()) {
+                artifact(allJar)
+                nativeJars.forEach { artifact(it) }
+            }
             pom {
                 name.set("BlueSpice ngspice")
                 description.set("ngspice-backed simulation engine and worker process implementation for BlueSpice.")

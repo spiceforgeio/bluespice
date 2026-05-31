@@ -11,10 +11,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform: linux-x86_64
+            native_name: libngspice.so
             ngspice_build_script: gradle/native-build/build-ngspice-linux.sh
           - os: windows-latest
+            platform: windows-x86_64
+            native_name: ngspice.dll
             ngspice_build_script: gradle/native-build/build-ngspice-windows.sh
           - os: macos-latest
+            platform: macos-aarch64
+            native_name: libngspice.dylib
             ngspice_build_script: gradle/native-build/build-ngspice-macos.sh
     runs-on: ${{ matrix.os }}
     steps:
@@ -84,42 +90,25 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          case "${RUNNER_OS}-${RUNNER_ARCH}" in
-            Linux-X64)
-              mkdir -p bluespice-ngspice/src/main/resources/natives/linux-x86_64
-              cp /opt/ngspice/lib/libngspice.so bluespice-ngspice/src/main/resources/natives/linux-x86_64/libngspice.so
-              echo "NATIVE_LIB_DIR=/opt/ngspice/lib" >> "$GITHUB_ENV"
-              echo "NATIVE_RESOURCE=bluespice-ngspice/src/main/resources/natives/linux-x86_64/libngspice.so" >> "$GITHUB_ENV"
-              ;;
-            Linux-ARM64)
-              mkdir -p bluespice-ngspice/src/main/resources/natives/linux-aarch64
-              cp /opt/ngspice/lib/libngspice.so bluespice-ngspice/src/main/resources/natives/linux-aarch64/libngspice.so
-              echo "NATIVE_LIB_DIR=/opt/ngspice/lib" >> "$GITHUB_ENV"
-              echo "NATIVE_RESOURCE=bluespice-ngspice/src/main/resources/natives/linux-aarch64/libngspice.so" >> "$GITHUB_ENV"
-              ;;
-            macOS-X64)
-              mkdir -p bluespice-ngspice/src/main/resources/natives/macos-x86_64
-              cp /opt/ngspice-mac/lib/libngspice.dylib bluespice-ngspice/src/main/resources/natives/macos-x86_64/libngspice.dylib
-              echo "NATIVE_LIB_DIR=/opt/ngspice-mac/lib" >> "$GITHUB_ENV"
-              echo "NATIVE_RESOURCE=bluespice-ngspice/src/main/resources/natives/macos-x86_64/libngspice.dylib" >> "$GITHUB_ENV"
-              ;;
-            macOS-ARM64)
-              mkdir -p bluespice-ngspice/src/main/resources/natives/macos-aarch64
-              cp /opt/ngspice-mac/lib/libngspice.dylib bluespice-ngspice/src/main/resources/natives/macos-aarch64/libngspice.dylib
-              echo "NATIVE_LIB_DIR=/opt/ngspice-mac/lib" >> "$GITHUB_ENV"
-              echo "NATIVE_RESOURCE=bluespice-ngspice/src/main/resources/natives/macos-aarch64/libngspice.dylib" >> "$GITHUB_ENV"
-              ;;
-          esac
+          mkdir -p "bluespice-ngspice/build/native-resources/natives/${{ matrix.platform }}"
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            cp /opt/ngspice/lib/libngspice.so "bluespice-ngspice/build/native-resources/natives/${{ matrix.platform }}/${{ matrix.native_name }}"
+            echo "NATIVE_LIB_DIR=/opt/ngspice/lib" >> "$GITHUB_ENV"
+          else
+            cp /opt/ngspice-mac/lib/libngspice.dylib "bluespice-ngspice/build/native-resources/natives/${{ matrix.platform }}/${{ matrix.native_name }}"
+            echo "NATIVE_LIB_DIR=/opt/ngspice-mac/lib" >> "$GITHUB_ENV"
+          fi
+          echo "NATIVE_RESOURCE=bluespice-ngspice/build/native-resources/natives/${{ matrix.platform }}/${{ matrix.native_name }}" >> "$GITHUB_ENV"
       - name: Package Windows native library resource
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          mkdir -p bluespice-ngspice/src/main/resources/natives/windows-x86_64
+          mkdir -p "bluespice-ngspice/build/native-resources/natives/${{ matrix.platform }}"
           # MinGW names the output libngspice-0.dll; package the name BlueSpice loads.
           cp /opt/ngspice-win/bin/libngspice-0.dll /opt/ngspice-win/bin/ngspice.dll
-          cp /opt/ngspice-win/bin/ngspice.dll bluespice-ngspice/src/main/resources/natives/windows-x86_64/ngspice.dll
+          cp /opt/ngspice-win/bin/ngspice.dll "bluespice-ngspice/build/native-resources/natives/${{ matrix.platform }}/${{ matrix.native_name }}"
           echo "NATIVE_LIB_DIR=$(cygpath -w /opt/ngspice-win/bin)" >> "$GITHUB_ENV"
-          echo "NATIVE_RESOURCE=bluespice-ngspice/src/main/resources/natives/windows-x86_64/ngspice.dll" >> "$GITHUB_ENV"
+          echo "NATIVE_RESOURCE=bluespice-ngspice/build/native-resources/natives/${{ matrix.platform }}/${{ matrix.native_name }}" >> "$GITHUB_ENV"
       - name: Run integration tests on Linux
         if: runner.os == 'Linux'
         run: ./gradlew test -Ptags=intg -Djna.library.path="${{ env.NATIVE_LIB_DIR }}" -Djava.library.path="${{ env.NATIVE_LIB_DIR }}"
@@ -140,7 +129,7 @@ jobs:
       - name: Upload native library
         uses: actions/upload-artifact@v4
         with:
-          name: native-${{ runner.os }}-${{ runner.arch }}
+          name: native-${{ matrix.platform }}
           path: ${{ env.NATIVE_RESOURCE }}
 
   package:
@@ -155,8 +144,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: native-*
-          path: .
-          merge-multiple: true
+          path: native-artifacts
+      - name: Stage native libraries for Gradle
+        run: |
+          mkdir -p bluespice-ngspice/build/native-resources/natives/linux-x86_64
+          mkdir -p bluespice-ngspice/build/native-resources/natives/windows-x86_64
+          mkdir -p bluespice-ngspice/build/native-resources/natives/macos-aarch64
+
+          cp native-artifacts/native-linux-x86_64/libngspice.so bluespice-ngspice/build/native-resources/natives/linux-x86_64/libngspice.so
+          cp native-artifacts/native-windows-x86_64/ngspice.dll bluespice-ngspice/build/native-resources/natives/windows-x86_64/ngspice.dll
+          cp native-artifacts/native-macos-aarch64/libngspice.dylib bluespice-ngspice/build/native-resources/natives/macos-aarch64/libngspice.dylib
       - name: Assemble native fat JAR
         run: ./gradlew :bluespice-ngspice:allJar
       - name: Upload fat JAR

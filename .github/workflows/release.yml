@@ -135,23 +135,70 @@ jobs:
         with:
           pattern: native-*
           path: native-artifacts
-      - name: Copy native libraries into resources
+      - name: Stage native libraries for Gradle
         run: |
-          mkdir -p bluespice-ngspice/src/main/resources/natives/linux-x86_64
-          mkdir -p bluespice-ngspice/src/main/resources/natives/linux-aarch64
-          mkdir -p bluespice-ngspice/src/main/resources/natives/windows-x86_64
-          mkdir -p bluespice-ngspice/src/main/resources/natives/macos-x86_64
-          mkdir -p bluespice-ngspice/src/main/resources/natives/macos-aarch64
+          mkdir -p bluespice-ngspice/build/native-resources/natives/linux-x86_64
+          mkdir -p bluespice-ngspice/build/native-resources/natives/linux-aarch64
+          mkdir -p bluespice-ngspice/build/native-resources/natives/windows-x86_64
+          mkdir -p bluespice-ngspice/build/native-resources/natives/macos-x86_64
+          mkdir -p bluespice-ngspice/build/native-resources/natives/macos-aarch64
 
-          cp native-artifacts/native-linux-x86_64/libngspice.so bluespice-ngspice/src/main/resources/natives/linux-x86_64/libngspice.so
-          cp native-artifacts/native-linux-aarch64/libngspice.so bluespice-ngspice/src/main/resources/natives/linux-aarch64/libngspice.so
-          cp native-artifacts/native-windows-x86_64/ngspice.dll bluespice-ngspice/src/main/resources/natives/windows-x86_64/ngspice.dll
-          cp native-artifacts/native-macos-x86_64/libngspice.dylib bluespice-ngspice/src/main/resources/natives/macos-x86_64/libngspice.dylib
-          cp native-artifacts/native-macos-aarch64/libngspice.dylib bluespice-ngspice/src/main/resources/natives/macos-aarch64/libngspice.dylib
+          cp native-artifacts/native-linux-x86_64/libngspice.so bluespice-ngspice/build/native-resources/natives/linux-x86_64/libngspice.so
+          cp native-artifacts/native-linux-aarch64/libngspice.so bluespice-ngspice/build/native-resources/natives/linux-aarch64/libngspice.so
+          cp native-artifacts/native-windows-x86_64/ngspice.dll bluespice-ngspice/build/native-resources/natives/windows-x86_64/ngspice.dll
+          cp native-artifacts/native-macos-x86_64/libngspice.dylib bluespice-ngspice/build/native-resources/natives/macos-x86_64/libngspice.dylib
+          cp native-artifacts/native-macos-aarch64/libngspice.dylib bluespice-ngspice/build/native-resources/natives/macos-aarch64/libngspice.dylib
+      - name: Run unit tests
+        run: ./gradlew test -Ptags=unit
+      - name: Build and verify Maven artifacts
+        shell: bash
+        run: |
+          ./gradlew \
+            :bluespice-ngspice:jar \
+            :bluespice-ngspice:allJar \
+            :bluespice-ngspice:nativeLinux_x86_64Jar \
+            :bluespice-ngspice:nativeLinux_aarch64Jar \
+            :bluespice-ngspice:nativeWindows_x86_64Jar \
+            :bluespice-ngspice:nativeMacos_x86_64Jar \
+            :bluespice-ngspice:nativeMacos_aarch64Jar \
+            -PpublishNativeArtifacts=true
+
+          source gradle.properties
+          jar_dir="bluespice-ngspice/build/libs"
+          plain_jar="${jar_dir}/bluespice-ngspice-${version}.jar"
+          all_jar="${jar_dir}/bluespice-ngspice-${version}-all.jar"
+
+          if jar tf "${plain_jar}" | grep -q '^natives/'; then
+            echo "Standard bluespice-ngspice JAR must not contain native libraries"
+            exit 1
+          fi
+
+          check_entry() {
+            local jar_file="$1"
+            local entry="$2"
+            if ! jar tf "${jar_file}" | grep -Fxq "${entry}"; then
+              echo "Missing ${entry} in ${jar_file}"
+              exit 1
+            fi
+          }
+
+          check_native_jar() {
+            local platform="$1"
+            local file_name="$2"
+            local jar_file="${jar_dir}/bluespice-ngspice-${version}-${platform}.jar"
+            check_entry "${jar_file}" "natives/${platform}/${file_name}"
+            check_entry "${all_jar}" "natives/${platform}/${file_name}"
+          }
+
+          check_native_jar linux-x86_64 libngspice.so
+          check_native_jar linux-aarch64 libngspice.so
+          check_native_jar windows-x86_64 ngspice.dll
+          check_native_jar macos-x86_64 libngspice.dylib
+          check_native_jar macos-aarch64 libngspice.dylib
       - name: Publish to Maven Central
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-        run: ./gradlew publishAggregationToCentralPortal
+        run: ./gradlew publishAggregationToCentralPortal -PpublishNativeArtifacts=true
