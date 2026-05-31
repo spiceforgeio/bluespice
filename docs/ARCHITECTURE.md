@@ -665,6 +665,7 @@ Standard Maven pattern for native-bundling libraries (same as LWJGL, JavaFX, Net
 ```
 bluespice-ngspice-X.Y.Z.jar               (pure Java, no natives)
 bluespice-ngspice-X.Y.Z-linux-x86_64.jar
+bluespice-ngspice-X.Y.Z-linux-aarch64.jar
 bluespice-ngspice-X.Y.Z-windows-x86_64.jar
 bluespice-ngspice-X.Y.Z-macos-x86_64.jar
 bluespice-ngspice-X.Y.Z-macos-aarch64.jar
@@ -684,6 +685,7 @@ Also published to Maven Central. All platform natives bundled in a single JAR. R
 bluespice-ngspice-X.Y.Z-all.jar
   natives/
     linux-x86_64/libngspice.so
+    linux-aarch64/libngspice.so
     windows-x86_64/ngspice.dll
     macos-x86_64/libngspice.dylib
     macos-aarch64/libngspice.dylib

@@ -10,7 +10,7 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 - Incremental parameter updates via `alter`/`altermod` — no full netlist reload needed for value changes
 - Dirty-region routing dispatches topologically disconnected subcircuits to parallel workers
 - Published as platform-specific classifier JARs (Maven standard) and as an all-platforms fat JAR for Minecraft mods and self-contained deployments
-- Linux, Windows, macOS — x86_64 and aarch64
+- Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64
 
 ## Requirements
 
@@ -19,36 +19,38 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 
 ## Dependency
 
-The library is not yet available on Maven Central. Snapshot releases are published to GitHub Packages.
+Current published version: `0.1.0`.
 
-> Snapshot JARs on GitHub Packages do not bundle native libraries. Native-packaged
-> artifacts are assembled by the CI `package` job and attached as workflow artifacts.
+BlueSpice is published to Maven Central under group `io.github.spiceforgeio`.
+The current source tag is `v0.1.0`.
 
 ### Gradle — classifier JAR (standard)
 
 ```kotlin
 repositories {
-    maven("https://maven.pkg.github.com/spiceforgeio/bluespice") {
-        credentials {
-            username = System.getenv("GITHUB_ACTOR")
-            password = System.getenv("GITHUB_TOKEN")
-        }
-    }
+    mavenCentral()
 }
 
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.1.0-SNAPSHOT")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0-SNAPSHOT")
-    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.1.0-SNAPSHOT:$osClassifier") // e.g. linux-x86_64
+    implementation("io.github.spiceforgeio:bluespice-core:0.1.0")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0")
+    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.1.0:$osClassifier") // e.g. linux-x86_64
 }
 ```
+
+Published classifiers: `linux-x86_64`, `linux-aarch64`, `windows-x86_64`,
+`macos-x86_64`, and `macos-aarch64`.
 
 ### Gradle — fat JAR (Minecraft mods / self-contained)
 
 ```kotlin
+repositories {
+    mavenCentral()
+}
+
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.1.0-SNAPSHOT")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0-SNAPSHOT:all")
+    implementation("io.github.spiceforgeio:bluespice-core:0.1.0")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0:all")
 }
 ```
 
