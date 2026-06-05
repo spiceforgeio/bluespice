@@ -19,10 +19,10 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 
 ## Dependency
 
-Current published version: `0.1.0`.
+Current source version: `0.2.0`.
 
 BlueSpice is published to Maven Central under group `io.github.spiceforgeio`.
-The current source tag is `v0.1.0`.
+Tag the release as `v0.2.0` when publishing this version.
 
 ### Gradle — classifier JAR (standard)
 
@@ -32,9 +32,9 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.1.0")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0")
-    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.1.0:$osClassifier") // e.g. linux-x86_64
+    implementation("io.github.spiceforgeio:bluespice-core:0.2.0")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.0")
+    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.2.0:$osClassifier") // e.g. linux-x86_64
 }
 ```
 
@@ -49,10 +49,13 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.1.0")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.1.0:all")
+    implementation("io.github.spiceforgeio:bluespice-core:0.2.0")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.0:all")
 }
 ```
+
+AC analysis does not require extra artifacts: public AC API types are in
+`bluespice-core`, and the ngspice `.ac` implementation is in `bluespice-ngspice`.
 
 ## Quick start
 
@@ -78,6 +81,9 @@ try (NgspiceEngine engine = NgspiceEngine.load(EngineConfig.defaults());
 ### Fixed-frequency AC
 
 AC source magnitudes and result phasors use RMS values by convention.
+Branch currents use the passive sign convention from component terminal 0 to terminal 1;
+sources delivering power therefore report negative real current for a positive voltage
+source feeding a passive load.
 
 ```java
 Circuit circuit = Circuit.empty("ac-divider");
@@ -118,8 +124,8 @@ See `gradle/native-build/` for scripts that compile ngspice from source on Linux
 
 | Module | Published | Description |
 |---|---|---|
-| `bluespice-core` | Yes | Public API: circuit model, simulation interfaces, exceptions |
-| `bluespice-ngspice` | Yes | ngspice backend: JNA binding, worker pool, netlist builder |
+| `bluespice-core` | Yes | Public API: circuit model, DC/AC/transient simulation interfaces, results, exceptions |
+| `bluespice-ngspice` | Yes | ngspice backend: JNA binding, worker pool, netlist builder, `.op`/`.ac`/`.tran` execution |
 | `bluespice-examples` | No | Standalone usage examples |
 | `bluespice-benchmarks` | No | JMH benchmarks |
 | `bluespice-test-common` | No | Shared test fixtures (internal) |

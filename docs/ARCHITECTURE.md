@@ -1,6 +1,6 @@
 # BlueSpice — Architecture
 
-**Version:** 0.1  
+**Version:** 0.2
 **Status:** Current
 
 ---
@@ -57,12 +57,15 @@ bluespice/
         ComponentValue.java
         Topology.java
       sim/
+        AcConfig.java
+        AcResult.java
+        Complex.java
         SimulationEngine.java
         SimulationSession.java
-        SimulationResult.java
         OperatingPointResult.java
         TransientResult.java
         TransientConfig.java
+        EngineConfig.java
       units/
         SIUnit.java
         Quantity.java
@@ -82,7 +85,7 @@ bluespice/
         WorkerChannel.java
       netlist/
         NetlistBuilder.java
-        NetlistLine.java
+        NodeNumbering.java
       result/
         VectorExtractor.java
 
@@ -220,6 +223,10 @@ public record AcConfig(double frequencyHz) {}
 
 The first AC API is fixed-frequency only. `frequencyHz` must be finite and positive.
 Public AC source magnitudes and result phasors are RMS by convention.
+AC branch currents use the passive sign convention from component terminal 0 to terminal
+1. Resistor currents are derived from complex node-voltage differences with that
+orientation; ngspice voltage-source branch vectors are exposed with the same passive
+orientation, so a source delivering power reports negative real current.
 
 ### Result types
 
@@ -754,10 +761,15 @@ implementation("io.github.spiceforgeio:bluespice-ngspice:X.Y.Z:all")
 ```
 groupId:    io.github.spiceforgeio
 artifactId: bluespice-core, bluespice-ngspice
-version:    0.1.0
+version:    0.2.0
 ```
 
 Published to Maven Central via `com.gradleup.nmcp`. Snapshot releases go to GitHub Packages. `bluespice-test-common` and `bluespice-benchmarks` are not published.
+
+Fixed-frequency AC support is published through the existing artifacts: `bluespice-core`
+contains `AcConfig`, `AcResult`, `Complex`, `ACVoltage`, and `ACCurrent`;
+`bluespice-ngspice` contains the ngspice `.ac` backend. No additional Maven artifact is
+required.
 
 ### Licensing
 

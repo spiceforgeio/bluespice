@@ -1,6 +1,6 @@
 # BlueSpice AC Support Plan
 
-**Status:** Implementation started
+**Status:** First fixed-frequency implementation complete; release/consumption pending
 **Scope:** BlueSpice public `.ac` analysis support for a future BlueGrid fixed-frequency
 AC steady-state backend.
 
@@ -13,6 +13,10 @@ Implementation note: the first fixed-frequency `.ac` slice now adds public
 `AcConfig`, `Complex`, `AcResult`, `SimulationSession.runAc(...)`, RMS AC source
 values, ngspice `ac lin 1 f f` execution, complex node-voltage extraction, voltage-source
 branch extraction, and derived resistor branch currents.
+
+Integration note: AC source phase, RC phase/magnitude, resistor branch current, and
+voltage-source branch-current sign are covered by `NgspiceAcTest` against native
+ngspice. Branch currents use the passive terminal 0 to terminal 1 sign convention.
 
 Original source-backed gap:
 
@@ -291,8 +295,9 @@ BlueGrid currently consumes Maven Central artifacts:
 - `io.github.spiceforgeio:bluespice-core:0.1.0`
 - `io.github.spiceforgeio:bluespice-ngspice:0.1.0`
 
-AC support changes published API in `bluespice-core` and backend behavior in
-`bluespice-ngspice`, so BlueGrid needs one of these before direct use:
+AC support is staged for BlueSpice `0.2.0`. It changes published API in
+`bluespice-core` and backend behavior in `bluespice-ngspice`, so BlueGrid needs one of
+these before direct use:
 
 1. Publish a new BlueSpice release, then update BlueGrid dependencies to that version.
 2. Publish locally from `bluespice/` and point BlueGrid at `mavenLocal()` for development
@@ -303,7 +308,7 @@ AC support changes published API in `bluespice-core` and backend behavior in
 Recommended path:
 
 - Use local publication or composite build for the first BlueGrid AC integration spike.
-- Publish a BlueSpice release after API names, RMS conventions, and branch-current signs
+- Publish BlueSpice `0.2.0` after API names, RMS conventions, and branch-current signs
   are verified by integration tests.
 - Only then update BlueGrid status from "API blocker" to "consumption pending" or
   "ready for integration", depending on whether the release/dependency update exists.
