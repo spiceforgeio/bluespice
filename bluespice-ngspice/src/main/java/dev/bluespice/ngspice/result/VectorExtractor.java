@@ -1,6 +1,8 @@
 package dev.bluespice.ngspice.result;
 
 import com.sun.jna.Pointer;
+import dev.bluespice.core.sim.AcResult;
+import dev.bluespice.core.sim.Complex;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientResult;
 import dev.bluespice.ngspice.NgspiceLibrary;
@@ -37,6 +39,17 @@ public final class VectorExtractor {
             throw new IllegalStateException("missing ngspice vector: " + vectorName);
         }
         return NgspiceVectorInfo.realValues(pointer);
+    }
+
+    /**
+     * Reads all complex values for a vector or throws when the vector is missing.
+     */
+    public static Complex[] readComplexArray(String vectorName) {
+        Pointer pointer = findVectorPointer(vectorName);
+        if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
+            throw new IllegalStateException("missing ngspice vector: " + vectorName);
+        }
+        return NgspiceVectorInfo.complexValues(pointer);
     }
 
     /**
@@ -103,6 +116,42 @@ public final class VectorExtractor {
     }
 
     /**
+     * Extracts fixed-frequency AC vectors for selected nodes and branch components.
+     */
+    public static AcResult extractAc(
+            List<String> nodeNames,
+            List<String> branchComponentIds,
+            double frequencyHz,
+            Duration solveTime) {
+        Objects.requireNonNull(nodeNames, "nodeNames");
+        Objects.requireNonNull(branchComponentIds, "branchComponentIds");
+        Objects.requireNonNull(solveTime, "solveTime");
+
+        Map<String, Complex> nodeVoltages = new LinkedHashMap<>();
+        boolean complete = true;
+        for (String nodeName : nodeNames) {
+            java.util.Optional<Complex> value = findComplexVector("v(" + nodeName + ")");
+            if (value.isPresent()) {
+                nodeVoltages.put(nodeName, value.get());
+            } else {
+                complete = false;
+            }
+        }
+
+        Map<String, Complex> branchCurrents = new LinkedHashMap<>();
+        for (String componentId : branchComponentIds) {
+            java.util.Optional<Complex> value = findComplexVector(componentId + "#branch");
+            if (value.isPresent()) {
+                branchCurrents.put(componentId, value.get());
+            } else {
+                complete = false;
+            }
+        }
+
+        return new AcResult(frequencyHz, nodeVoltages, branchCurrents, complete, solveTime);
+    }
+
+    /**
      * Finds the last real value of a vector, if present.
      */
     public static OptionalDouble findLastValue(String vectorName) {
@@ -131,6 +180,26 @@ public final class VectorExtractor {
             return java.util.Optional.of(NgspiceVectorInfo.realValues(pointer));
         } catch (IllegalStateException e) {
             return java.util.Optional.empty();
+        }
+    }
+
+    private static java.util.Optional<Complex> findComplexVector(String vectorName) {
+        Pointer pointer = findVectorPointer(vectorName);
+        if (pointer == null || Pointer.nativeValue(pointer) == 0L) {
+            return java.util.Optional.empty();
+        }
+        try {
+            Complex[] values = NgspiceVectorInfo.complexValues(pointer);
+            if (values.length == 0) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(values[0]);
+        } catch (IllegalStateException e) {
+            try {
+                return java.util.Optional.of(new Complex(NgspiceVectorInfo.firstRealValue(pointer), 0.0));
+            } catch (IllegalStateException ignored) {
+                return java.util.Optional.empty();
+            }
         }
     }
 

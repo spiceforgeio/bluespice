@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import dev.bluespice.core.circuit.ComponentValue;
+import dev.bluespice.core.sim.AcConfig;
+import dev.bluespice.core.sim.AcResult;
+import dev.bluespice.core.sim.Complex;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
@@ -24,6 +27,7 @@ class WorkerProtocolTest {
         roundTripCommand(new WorkerProtocol.Command.LoadCircuit("* test\n.end\n"));
         roundTripCommand(new WorkerProtocol.Command.RunOperatingPoint());
         roundTripCommand(new WorkerProtocol.Command.RunTransient(TransientConfig.oneTick(0.05)));
+        roundTripCommand(new WorkerProtocol.Command.RunAc(new AcConfig(50.0)));
         roundTripCommand(new WorkerProtocol.Command.Alter("R1", new ComponentValue.Resistance(220.0)));
         roundTripCommand(new WorkerProtocol.Command.GetVector("vout"));
         roundTripCommand(new WorkerProtocol.Command.Reset());
@@ -47,6 +51,13 @@ class WorkerProtocolTest {
         var decodedTran = assertInstanceOf(WorkerProtocol.Response.ResultTran.class, tran);
         assertEquals(Map.of("vout", 2.5), decodedTran.capturedIc().capacitorVoltages());
         assertEquals(Map.of("L1", 0.01), decodedTran.capturedIc().inductorCurrents());
+
+        roundTripResponse(new WorkerProtocol.Response.ResultAc(new AcResult(
+                50.0,
+                Map.of("vout", new Complex(2.5, 0.0)),
+                Map.of("R1", new Complex(0.0025, 0.0)),
+                true,
+                Duration.ofMillis(4))));
 
         var vector = roundTripResponse(new WorkerProtocol.Response.Vector(
                 "vout", new double[] {1.0, 2.0}, Map.of("units", "V")));

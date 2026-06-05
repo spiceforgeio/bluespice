@@ -114,6 +114,38 @@ public final class Circuits {
         return circuit;
     }
 
+    public static Circuit acVoltageDivider(double rmsVolts, double phaseDegrees) {
+        Circuit circuit = Circuit.empty("ac-voltage-divider");
+        Node vin = circuit.addNode("vin");
+        Node vmid = circuit.addNode("vmid");
+        circuit.addComponent(VOLTAGE_SOURCE, "V1",
+                new ComponentValue.ACVoltage(rmsVolts, phaseDegrees), vin, circuit.ground());
+        circuit.addComponent(RESISTOR, "R1", new ComponentValue.Resistance(1000.0), vin, vmid);
+        circuit.addComponent(RESISTOR, "R2", new ComponentValue.Resistance(1000.0), vmid, circuit.ground());
+        return circuit;
+    }
+
+    public static Circuit acCurrentDivider(double rmsAmps, double phaseDegrees) {
+        Circuit circuit = Circuit.empty("ac-current-divider");
+        Node isplit = circuit.addNode("isplit");
+        circuit.addComponent(CURRENT_SOURCE, "I1",
+                new ComponentValue.ACCurrent(rmsAmps, phaseDegrees), circuit.ground(), isplit);
+        circuit.addComponent(RESISTOR, "R1", new ComponentValue.Resistance(1000.0), isplit, circuit.ground());
+        circuit.addComponent(RESISTOR, "R2", new ComponentValue.Resistance(3000.0), isplit, circuit.ground());
+        return circuit;
+    }
+
+    public static Circuit acRcLowPass(double rmsVolts, double phaseDegrees) {
+        Circuit circuit = Circuit.empty("ac-rc-low-pass");
+        Node vin = circuit.addNode("vin");
+        Node vout = circuit.addNode("vout");
+        circuit.addComponent(VOLTAGE_SOURCE, "V1",
+                new ComponentValue.ACVoltage(rmsVolts, phaseDegrees), vin, circuit.ground());
+        circuit.addComponent(RESISTOR, "R1", new ComponentValue.Resistance(1000.0), vin, vout);
+        circuit.addComponent(CAPACITOR, "C1", new ComponentValue.Capacitance(1.0E-6), vout, circuit.ground());
+        return circuit;
+    }
+
     private static Map<String, Double> orderedParams(Object... values) {
         Map<String, Double> params = new LinkedHashMap<>();
         for (int i = 0; i < values.length; i += 2) {

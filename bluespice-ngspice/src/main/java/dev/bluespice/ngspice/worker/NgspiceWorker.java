@@ -1,6 +1,7 @@
 package dev.bluespice.ngspice.worker;
 
 import dev.bluespice.core.circuit.ComponentValue;
+import dev.bluespice.core.sim.AcConfig;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
@@ -143,6 +144,7 @@ public final class NgspiceWorker {
                 case WorkerProtocol.Command.LoadCircuit loadCircuit -> loadCircuit(loadCircuit);
                 case WorkerProtocol.Command.RunOperatingPoint ignored -> runOperatingPoint();
                 case WorkerProtocol.Command.RunTransient runTransient -> runTransient(runTransient);
+                case WorkerProtocol.Command.RunAc runAc -> runAc(runAc.config());
                 case WorkerProtocol.Command.Alter alter -> alter(alter.componentId(), alter.newValue());
                 case WorkerProtocol.Command.GetVector getVector -> getVector(getVector.name());
                 case WorkerProtocol.Command.Reset ignored -> reset();
@@ -253,6 +255,28 @@ public final class NgspiceWorker {
         return null;
     }
 
+    private WorkerProtocol.Response runAc(AcConfig config) {
+        if (activeTransient != null) {
+            return new WorkerProtocol.Response.Error("transient is already running");
+        }
+
+        long started = System.nanoTime();
+        callbacks.clearDiagnostics();
+        String acCommand = String.format(Locale.ROOT, "ac lin 1 %s %s", config.frequencyHz(), config.frequencyHz());
+        int code = NgspiceLibrary.ngSpice_Command(acCommand);
+        if (callbacks.convergenceFailed()) {
+            return new WorkerProtocol.Response.Error("convergence: " + callbacks.lastErrorMessage());
+        }
+        if (code != 0) {
+            return new WorkerProtocol.Response.Error(diagnosticMessage(
+                    "ngSpice_Command " + acCommand + " failed with code " + code));
+        }
+
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
+        return new WorkerProtocol.Response.ResultAc(
+                VectorExtractor.extractAc(nodeNames, branchComponents, config.frequencyHz(), elapsed));
+    }
+
     private WorkerProtocol.Response bgHalt() {
         if (activeTransient == null) {
             return null;
@@ -355,6 +379,10 @@ public final class NgspiceWorker {
             case ComponentValue.Inductance value -> List.of("alter " + id + " " + value.henries());
             case ComponentValue.DCVoltage value -> List.of("alter " + id + " dc=" + value.volts());
             case ComponentValue.DCCurrent value -> List.of("alter " + id + " dc=" + value.amps());
+            case ComponentValue.ACVoltage value -> throw new UnsupportedOperationException(
+                    "alter not supported for " + value.getClass().getSimpleName());
+            case ComponentValue.ACCurrent value -> throw new UnsupportedOperationException(
+                    "alter not supported for " + value.getClass().getSimpleName());
             case ComponentValue.SwitchState value -> List.of("alter " + id + " dc="
                     + (value.closed() ? value.ron() : value.roff()));
             case ComponentValue.ModelRef value -> value.params().entrySet().stream()

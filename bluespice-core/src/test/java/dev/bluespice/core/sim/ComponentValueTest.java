@@ -38,6 +38,10 @@ class ComponentValueTest {
         assertThrows(IllegalArgumentException.class, () -> new ComponentValue.Inductance(Double.NaN));
         assertThrows(IllegalArgumentException.class, () -> new ComponentValue.DCVoltage(Double.POSITIVE_INFINITY));
         assertThrows(IllegalArgumentException.class, () -> new ComponentValue.DCCurrent(Double.NaN));
+        assertThrows(IllegalArgumentException.class, () -> new ComponentValue.ACVoltage(-1.0, 0.0));
+        assertThrows(IllegalArgumentException.class, () -> new ComponentValue.ACVoltage(1.0, Double.NaN));
+        assertThrows(IllegalArgumentException.class, () -> new ComponentValue.ACCurrent(-1.0, 0.0));
+        assertThrows(IllegalArgumentException.class, () -> new ComponentValue.ACCurrent(1.0, Double.POSITIVE_INFINITY));
         assertThrows(IllegalArgumentException.class, () -> new ComponentValue.SwitchState(true, 1.0, 0.0));
         assertThrows(IllegalArgumentException.class, () ->
                 new ComponentValue.PulseSource(0, 5, 0, 1e-9, 1e-9, 1e-3, 0.0));
@@ -53,6 +57,8 @@ class ComponentValueTest {
             case ComponentValue.Inductance ignored -> "inductance";
             case ComponentValue.DCVoltage ignored -> "voltage";
             case ComponentValue.DCCurrent ignored -> "current";
+            case ComponentValue.ACVoltage ignored -> "ac voltage";
+            case ComponentValue.ACCurrent ignored -> "ac current";
             case ComponentValue.ModelRef ignored -> "model";
             case ComponentValue.SwitchState ignored -> "switch";
             case ComponentValue.PulseSource ignored -> "pulse";

@@ -5,7 +5,7 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 ## Features
 
 - Typed Java API for building and modifying circuits at runtime
-- DC operating-point and transient simulations
+- DC operating-point, fixed-frequency AC, and transient simulations
 - Worker-process pool — each session runs in a dedicated child JVM, providing true parallelism and crash isolation
 - Incremental parameter updates via `alter`/`altermod` — no full netlist reload needed for value changes
 - Dirty-region routing dispatches topologically disconnected subcircuits to parallel workers
@@ -72,6 +72,29 @@ try (NgspiceEngine engine = NgspiceEngine.load(EngineConfig.defaults());
     result.nodeVoltages().forEach((node, v) ->
             System.out.printf("v(%s) = %.3f V%n", node, v));
     // v(vmid) = 5.000 V
+}
+```
+
+### Fixed-frequency AC
+
+AC source magnitudes and result phasors use RMS values by convention.
+
+```java
+Circuit circuit = Circuit.empty("ac-divider");
+Node vin  = circuit.addNode("vin");
+Node vmid = circuit.addNode("vmid");
+
+circuit.addComponent(VOLTAGE_SOURCE, "V1", new ComponentValue.ACVoltage(10.0, 0.0), vin, circuit.ground());
+circuit.addComponent(RESISTOR,       "R1", new ComponentValue.Resistance(1_000.0), vin, vmid);
+circuit.addComponent(RESISTOR,       "R2", new ComponentValue.Resistance(1_000.0), vmid, circuit.ground());
+
+try (NgspiceEngine engine = NgspiceEngine.load(EngineConfig.defaults());
+     SimulationSession session = engine.openSession(circuit)) {
+
+    var ac = session.runAc(new AcConfig(50.0));
+    System.out.printf("|v(vmid)| = %.3f Vrms, phase = %.1f deg%n",
+            ac.voltageMagnitude("vmid"),
+            ac.voltage("vmid").phaseDegrees());
 }
 ```
 

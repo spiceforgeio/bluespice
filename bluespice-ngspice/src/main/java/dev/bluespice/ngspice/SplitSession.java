@@ -4,6 +4,9 @@ import dev.bluespice.core.circuit.Circuit;
 import dev.bluespice.core.circuit.Component;
 import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.circuit.Topology;
+import dev.bluespice.core.sim.AcConfig;
+import dev.bluespice.core.sim.AcResult;
+import dev.bluespice.core.sim.Complex;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.SimulationSession;
 import dev.bluespice.core.sim.TransientConfig;
@@ -64,6 +67,20 @@ final class SplitSession implements SimulationSession {
         } finally {
             transientRunning.set(false);
         }
+    }
+
+    @Override
+    public AcResult runAc(AcConfig config) {
+        Objects.requireNonNull(config, "config");
+        SessionSet snapshot;
+        synchronized (this) {
+            ensureOpen();
+            if (transientRunning.get()) {
+                throw new IllegalStateException("transient is already running");
+            }
+            snapshot = sessionSet();
+        }
+        return mergeAc(runAll(snapshot, session -> session.runAc(config)));
     }
 
     @Override
@@ -219,6 +236,29 @@ final class SplitSession implements SimulationSession {
             }
         }
         return new TransientResult(timePoints, nodeVoltages, branchCurrents, completed, solveTime);
+    }
+
+    private static AcResult mergeAc(List<AcResult> results) {
+        if (results.isEmpty()) {
+            throw new IllegalStateException("split session has no sub-sessions");
+        }
+        double frequencyHz = results.getFirst().frequencyHz();
+        Map<String, Complex> nodeVoltages = new LinkedHashMap<>();
+        Map<String, Complex> branchCurrents = new LinkedHashMap<>();
+        boolean converged = true;
+        Duration solveTime = Duration.ZERO;
+        for (AcResult result : results) {
+            if (result.frequencyHz() != frequencyHz) {
+                throw new IllegalStateException("split AC results have different frequencies");
+            }
+            nodeVoltages.putAll(result.nodeVoltages());
+            branchCurrents.putAll(result.branchCurrents());
+            converged &= result.converged();
+            if (result.solveTime().compareTo(solveTime) > 0) {
+                solveTime = result.solveTime();
+            }
+        }
+        return new AcResult(frequencyHz, nodeVoltages, branchCurrents, converged, solveTime);
     }
 
     private static <T> List<T> runAll(SessionSet sessionSet, ThrowingFunction<NgspiceSession, T> action) {

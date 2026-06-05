@@ -8,6 +8,9 @@ import dev.bluespice.core.circuit.Node;
 import dev.bluespice.core.exception.ConvergenceException;
 import dev.bluespice.core.exception.SimulationTimeoutException;
 import dev.bluespice.core.exception.WorkerCrashException;
+import dev.bluespice.core.sim.AcConfig;
+import dev.bluespice.core.sim.AcResult;
+import dev.bluespice.core.sim.Complex;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.SimulationSession;
 import dev.bluespice.core.sim.TransientConfig;
@@ -95,6 +98,21 @@ public final class NgspiceSession implements SimulationSession {
     }
 
     @Override
+    public synchronized AcResult runAc(AcConfig config) {
+        ensureOpen();
+        Objects.requireNonNull(config, "config");
+        if (isTransientRunning()) {
+            throw new IllegalStateException("transient is already running");
+        }
+        flushDirtyState(false);
+
+        WorkerProtocol.Response response = send(new WorkerProtocol.Command.RunAc(config));
+        WorkerProtocol.Response.ResultAc result =
+                expect(response, WorkerProtocol.Response.ResultAc.class, "RUN_AC");
+        return withDerivedBranchCurrents(result.result());
+    }
+
+    @Override
     public void cancelTransient() {
         if (!transientRunning.get()) {
             return;
@@ -137,6 +155,14 @@ public final class NgspiceSession implements SimulationSession {
         }
         // Altering C or L changes the model value only; stored energy is carried by IC injection on restart.
         Component component = circuit.getComponent(componentId);
+        if (newValue instanceof ComponentValue.ACVoltage || newValue instanceof ComponentValue.ACCurrent) {
+            pendingAlters.clear();
+            paramDirty = false;
+            topologyDirty = true;
+            lastCapturedIc = CapturedIcState.EMPTY;
+            icDirty = false;
+            return;
+        }
         pendingAlters.add(new WorkerProtocol.Command.Alter(alterTargetId(component, newValue), newValue));
         paramDirty = true;
     }
@@ -236,6 +262,39 @@ public final class NgspiceSession implements SimulationSession {
                 result.solveTime());
     }
 
+    private AcResult withDerivedBranchCurrents(AcResult result) {
+        Map<String, Complex> branchCurrents = new LinkedHashMap<>(result.branchCurrents());
+        for (Component component : circuit.components()) {
+            if (component.type() == ComponentType.VOLTAGE_SOURCE) {
+                normalizeVoltageSourceCurrent(component, branchCurrents);
+            } else if (component.type() == ComponentType.RESISTOR && !branchCurrents.containsKey(component.id())) {
+                resistorCurrentAc(component, result.nodeVoltages())
+                        .ifPresent(current -> branchCurrents.put(component.id(), current));
+            }
+        }
+        return new AcResult(
+                result.frequencyHz(),
+                result.nodeVoltages(),
+                branchCurrents,
+                result.converged(),
+                result.solveTime());
+    }
+
+    private void normalizeVoltageSourceCurrent(Component component, Map<String, Complex> branchCurrents) {
+        String spiceId = NetlistBuilder.spiceElementId(component);
+        Complex current = branchCurrents.get(spiceId);
+        if (current == null) {
+            return;
+        }
+
+        // ngspice voltage-source branch current is positive from the positive source
+        // terminal to the negative source terminal, matching BlueSpice terminal 0 -> 1.
+        branchCurrents.put(component.id(), current);
+        if (!component.id().equals(spiceId)) {
+            branchCurrents.remove(spiceId);
+        }
+    }
+
     private java.util.Optional<Double> resistorCurrent(Component component, Map<String, Double> nodeVoltages) {
         if (component.terminals().size() != 2 || !(component.value() instanceof ComponentValue.Resistance resistance)) {
             return java.util.Optional.empty();
@@ -245,8 +304,24 @@ public final class NgspiceSession implements SimulationSession {
         return java.util.Optional.of((positive - negative) / resistance.ohms());
     }
 
+    private java.util.Optional<Complex> resistorCurrentAc(Component component, Map<String, Complex> nodeVoltages) {
+        if (component.terminals().size() != 2 || !(component.value() instanceof ComponentValue.Resistance resistance)) {
+            return java.util.Optional.empty();
+        }
+        Complex positive = nodeVoltageAc(component.terminals().get(0), nodeVoltages);
+        Complex negative = nodeVoltageAc(component.terminals().get(1), nodeVoltages);
+        if (positive == null || negative == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(positive.minus(negative).dividedBy(resistance.ohms()));
+    }
+
     private double nodeVoltage(Node node, Map<String, Double> nodeVoltages) {
         return node.isGround() ? 0.0 : nodeVoltages.getOrDefault(node.label(), Double.NaN);
+    }
+
+    private Complex nodeVoltageAc(Node node, Map<String, Complex> nodeVoltages) {
+        return node.isGround() ? new Complex(0.0, 0.0) : nodeVoltages.get(node.label());
     }
 
     private void ensureOpen() {

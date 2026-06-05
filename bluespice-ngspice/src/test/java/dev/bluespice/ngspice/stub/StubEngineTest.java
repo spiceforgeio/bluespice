@@ -9,6 +9,7 @@ import dev.bluespice.core.circuit.ComponentValue;
 import dev.bluespice.core.circuit.Circuit;
 import dev.bluespice.core.circuit.ComponentType;
 import dev.bluespice.core.circuit.Node;
+import dev.bluespice.core.sim.AcConfig;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
@@ -37,6 +38,12 @@ class StubEngineTest {
             assertTrue(tran.completed());
             assertEquals(0.0, tran.voltageAtEnd("vout"));
             assertEquals(0.0, tran.currentAtEnd("R1"));
+
+            var ac = session.runAc(new AcConfig(50.0));
+            assertTrue(ac.converged());
+            assertEquals(50.0, ac.frequencyHz());
+            assertEquals(0.0, ac.voltageMagnitude("vout"));
+            assertEquals(0.0, ac.currentMagnitude("R1"));
 
             session.cancelTransient();
             session.onTopologyChanged();

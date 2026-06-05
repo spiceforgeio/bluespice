@@ -4,6 +4,9 @@ import dev.bluespice.core.circuit.Circuit;
 import dev.bluespice.core.circuit.Component;
 import dev.bluespice.core.circuit.ComponentType;
 import dev.bluespice.core.circuit.ComponentValue;
+import dev.bluespice.core.sim.AcConfig;
+import dev.bluespice.core.sim.AcResult;
+import dev.bluespice.core.sim.Complex;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.SimulationEngine;
 import dev.bluespice.core.sim.SimulationSession;
@@ -83,6 +86,19 @@ public final class StubEngine implements SimulationEngine {
                     branchCurrents,
                     true,
                     Duration.ZERO);
+        }
+
+        @Override
+        public AcResult runAc(AcConfig config) {
+            Objects.requireNonNull(config, "config");
+            Map<String, Complex> nodeVoltages = new LinkedHashMap<>();
+            circuit.nodes().stream()
+                    .filter(node -> !node.isGround())
+                    .forEach(node -> nodeVoltages.put(node.label(), new Complex(0.0, 0.0)));
+
+            Map<String, Complex> branchCurrents = new LinkedHashMap<>();
+            circuit.components().forEach(component -> branchCurrents.put(component.id(), new Complex(0.0, 0.0)));
+            return new AcResult(config.frequencyHz(), nodeVoltages, branchCurrents, true, Duration.ZERO);
         }
 
         @Override

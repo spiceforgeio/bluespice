@@ -3,6 +3,7 @@ package dev.bluespice.ngspice;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
+import dev.bluespice.core.sim.Complex;
 import java.util.List;
 import java.util.Objects;
 
@@ -12,6 +13,7 @@ import java.util.Objects;
 public final class NgspiceVectorInfo extends Structure {
     private static final int SUPPORTED_POINTER_SIZE = 8;
     private static final int REAL_DATA_OFFSET_64 = 16;
+    private static final int COMPLEX_DATA_OFFSET_64 = 24;
     private static final int LENGTH_OFFSET_64 = 32;
 
     public String v_name;
@@ -67,6 +69,27 @@ public final class NgspiceVectorInfo extends Structure {
             throw new IllegalStateException("ngspice vector has no real data");
         }
         return realData.getDoubleArray(0, length);
+    }
+
+    /**
+     * Reads all complex values from a vector-info pointer.
+     */
+    public static Complex[] complexValues(Pointer vectorInfo) {
+        Objects.requireNonNull(vectorInfo, "vectorInfo");
+        ensureSupportedAbi();
+
+        Pointer complexData = vectorInfo.getPointer(COMPLEX_DATA_OFFSET_64);
+        int length = vectorInfo.getInt(LENGTH_OFFSET_64);
+        if (complexData == null || length == 0) {
+            throw new IllegalStateException("ngspice vector has no complex data");
+        }
+
+        double[] packed = complexData.getDoubleArray(0, length * 2);
+        Complex[] values = new Complex[length];
+        for (int i = 0; i < length; i++) {
+            values[i] = new Complex(packed[i * 2], packed[i * 2 + 1]);
+        }
+        return values;
     }
 
     private static void ensureSupportedAbi() {

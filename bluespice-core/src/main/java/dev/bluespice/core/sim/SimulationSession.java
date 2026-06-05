@@ -24,6 +24,11 @@ public interface SimulationSession extends AutoCloseable {
     TransientResult runTransient(TransientConfig config);
 
     /**
+     * Runs a fixed-frequency AC analysis with RMS phasor source and result conventions.
+     */
+    AcResult runAc(AcConfig config);
+
+    /**
      * Cancels a running transient.
      *
      * <p>This is a no-op when no transient is running. Implementations that support continuity

@@ -86,10 +86,8 @@ public final class NetlistBuilder {
                     + " " + spiceDouble(resistance(component.value()));
             case CAPACITOR -> capacitorLine(component, numbering, ic);
             case INDUCTOR -> inductorLine(component, numbering, ic);
-            case VOLTAGE_SOURCE -> prefix(component, "V") + twoTerminal(component, numbering)
-                    + " DC " + spiceDouble(dcVoltage(component.value()));
-            case CURRENT_SOURCE -> prefix(component, "I") + twoTerminal(component, numbering)
-                    + " DC " + spiceDouble(dcCurrent(component.value()));
+            case VOLTAGE_SOURCE -> voltageSourceLine(component, numbering);
+            case CURRENT_SOURCE -> currentSourceLine(component, numbering);
             case DIODE -> prefix(component, "D") + terminals(component, numbering, 2)
                     + " " + modelName(component.value());
             case BJT_NPN, BJT_PNP -> prefix(component, "Q") + terminals(component, numbering, 3)
@@ -100,6 +98,26 @@ public final class NetlistBuilder {
                     + " " + switchModelName(component);
             case VCVS, VCCS, CCVS, CCCS, TRANSMISSION_LINE, XSPICE_BLOCK ->
                     throw new UnsupportedOperationException("netlist support not defined for " + component.type());
+        };
+    }
+
+    private String voltageSourceLine(Component component, NodeNumbering numbering) {
+        String prefix = prefix(component, "V") + twoTerminal(component, numbering);
+        return switch (component.value()) {
+            case ComponentValue.DCVoltage value -> prefix + " DC " + spiceDouble(value.volts());
+            case ComponentValue.ACVoltage value -> prefix + " AC "
+                    + spiceDouble(value.rmsVolts()) + " " + spiceDouble(value.phaseDegrees());
+            default -> throw new IllegalArgumentException("expected voltage source value, got " + component.value());
+        };
+    }
+
+    private String currentSourceLine(Component component, NodeNumbering numbering) {
+        String prefix = prefix(component, "I") + twoTerminal(component, numbering);
+        return switch (component.value()) {
+            case ComponentValue.DCCurrent value -> prefix + " DC " + spiceDouble(value.amps());
+            case ComponentValue.ACCurrent value -> prefix + " AC "
+                    + spiceDouble(value.rmsAmps()) + " " + spiceDouble(value.phaseDegrees());
+            default -> throw new IllegalArgumentException("expected current source value, got " + component.value());
         };
     }
 
@@ -245,14 +263,6 @@ public final class NetlistBuilder {
 
     private static double inductance(ComponentValue value) {
         return require(value, ComponentValue.Inductance.class).henries();
-    }
-
-    private static double dcVoltage(ComponentValue value) {
-        return require(value, ComponentValue.DCVoltage.class).volts();
-    }
-
-    private static double dcCurrent(ComponentValue value) {
-        return require(value, ComponentValue.DCCurrent.class).amps();
     }
 
     private static String modelName(ComponentValue value) {

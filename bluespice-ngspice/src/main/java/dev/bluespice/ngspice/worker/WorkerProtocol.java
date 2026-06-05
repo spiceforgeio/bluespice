@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import dev.bluespice.core.circuit.ComponentValue;
+import dev.bluespice.core.sim.AcConfig;
+import dev.bluespice.core.sim.AcResult;
 import dev.bluespice.core.sim.OperatingPointResult;
 import dev.bluespice.core.sim.TransientConfig;
 import dev.bluespice.core.sim.TransientResult;
@@ -78,6 +80,7 @@ public final class WorkerProtocol {
             @JsonSubTypes.Type(value = Command.LoadCircuit.class, name = "LOAD_CIRCUIT"),
             @JsonSubTypes.Type(value = Command.RunOperatingPoint.class, name = "RUN_OP"),
             @JsonSubTypes.Type(value = Command.RunTransient.class, name = "RUN_TRAN"),
+            @JsonSubTypes.Type(value = Command.RunAc.class, name = "RUN_AC"),
             @JsonSubTypes.Type(value = Command.Alter.class, name = "ALTER"),
             @JsonSubTypes.Type(value = Command.GetVector.class, name = "GET_VECTOR"),
             @JsonSubTypes.Type(value = Command.Reset.class, name = "RESET"),
@@ -119,6 +122,11 @@ public final class WorkerProtocol {
         }
 
         /**
+         * Runs a fixed-frequency AC analysis.
+         */
+        record RunAc(AcConfig config) implements Command {}
+
+        /**
          * Alters one component or model parameter.
          */
         record Alter(String componentId, ComponentValue newValue) implements Command {}
@@ -153,6 +161,7 @@ public final class WorkerProtocol {
             @JsonSubTypes.Type(value = Response.Error.class, name = "ERROR"),
             @JsonSubTypes.Type(value = Response.ResultOp.class, name = "RESULT_OP"),
             @JsonSubTypes.Type(value = Response.ResultTran.class, name = "RESULT_TRAN"),
+            @JsonSubTypes.Type(value = Response.ResultAc.class, name = "RESULT_AC"),
             @JsonSubTypes.Type(value = Response.Vector.class, name = "VECTOR")
     })
     public sealed interface Response {
@@ -181,6 +190,11 @@ public final class WorkerProtocol {
         }
 
         /**
+         * Fixed-frequency AC result payload.
+         */
+        record ResultAc(AcResult result) implements Response {}
+
+        /**
          * Raw vector payload.
          */
         record Vector(String name, double[] values, Map<String, String> metadata) implements Response {}
@@ -193,6 +207,8 @@ public final class WorkerProtocol {
             @JsonSubTypes.Type(value = ComponentValue.Inductance.class, name = "Inductance"),
             @JsonSubTypes.Type(value = ComponentValue.DCVoltage.class, name = "DCVoltage"),
             @JsonSubTypes.Type(value = ComponentValue.DCCurrent.class, name = "DCCurrent"),
+            @JsonSubTypes.Type(value = ComponentValue.ACVoltage.class, name = "ACVoltage"),
+            @JsonSubTypes.Type(value = ComponentValue.ACCurrent.class, name = "ACCurrent"),
             @JsonSubTypes.Type(value = ComponentValue.ModelRef.class, name = "ModelRef"),
             @JsonSubTypes.Type(value = ComponentValue.SwitchState.class, name = "SwitchState"),
             @JsonSubTypes.Type(value = ComponentValue.PulseSource.class, name = "PulseSource")

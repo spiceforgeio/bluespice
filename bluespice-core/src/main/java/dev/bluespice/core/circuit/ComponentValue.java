@@ -59,6 +59,32 @@ public sealed interface ComponentValue {
     }
 
     /**
+     * Fixed-frequency AC voltage source phasor in RMS volts and degrees.
+     */
+    record ACVoltage(double rmsVolts, double phaseDegrees) implements ComponentValue {
+        public ACVoltage {
+            requireFinite(rmsVolts, "rmsVolts");
+            if (rmsVolts < 0.0) {
+                throw new IllegalArgumentException("rmsVolts must be non-negative");
+            }
+            requireFinite(phaseDegrees, "phaseDegrees");
+        }
+    }
+
+    /**
+     * Fixed-frequency AC current source phasor in RMS amperes and degrees.
+     */
+    record ACCurrent(double rmsAmps, double phaseDegrees) implements ComponentValue {
+        public ACCurrent {
+            requireFinite(rmsAmps, "rmsAmps");
+            if (rmsAmps < 0.0) {
+                throw new IllegalArgumentException("rmsAmps must be non-negative");
+            }
+            requireFinite(phaseDegrees, "phaseDegrees");
+        }
+    }
+
+    /**
      * Named simulator model reference with ordered numeric parameters.
      */
     record ModelRef(String modelName, Map<String, Double> params) implements ComponentValue {

@@ -28,7 +28,7 @@
 BlueSpice is a general-purpose Java 21 library for circuit simulation using ngspice as the primary backend. It exposes a clean, backend-agnostic API that allows callers to:
 
 - Construct and modify circuit graphs at runtime
-- Run operating point (DC) and transient simulations
+- Run operating point (DC), fixed-frequency AC, and transient simulations
 - Query node voltages, branch currents, and component states
 - Operate in an incremental, update-driven loop suitable for interactive applications
 
@@ -156,6 +156,10 @@ public sealed interface ComponentValue {
     record Inductance(double henries)     implements ComponentValue {}
     record DCVoltage(double volts)        implements ComponentValue {}
     record DCCurrent(double amps)         implements ComponentValue {}
+    record ACVoltage(double rmsVolts,
+                     double phaseDegrees) implements ComponentValue {}
+    record ACCurrent(double rmsAmps,
+                     double phaseDegrees) implements ComponentValue {}
     record ModelRef(String modelName,
                     Map<String,Double> params) implements ComponentValue {}
     record SwitchState(boolean closed,
@@ -182,6 +186,7 @@ public interface SimulationEngine extends AutoCloseable {
 public interface SimulationSession extends AutoCloseable {
     OperatingPointResult runOperatingPoint();
     TransientResult runTransient(TransientConfig config);
+    AcResult runAc(AcConfig config);
 
     void cancelTransient();          // halts bg transient; captures IC state
     void onTopologyChanged();
@@ -207,6 +212,15 @@ public record TransientConfig(
 }
 ```
 
+### `AcConfig`
+
+```java
+public record AcConfig(double frequencyHz) {}
+```
+
+The first AC API is fixed-frequency only. `frequencyHz` must be finite and positive.
+Public AC source magnitudes and result phasors are RMS by convention.
+
 ### Result types
 
 ```java
@@ -227,6 +241,25 @@ public record TransientResult(
     public double voltageAt(String node, double time) { ... }
     public double voltageAtEnd(String node) { ... }
     public double currentAtEnd(String componentId) { ... }
+}
+
+public record Complex(double real, double imaginary) {
+    public double magnitude() { ... }
+    public double phaseRadians() { ... }
+    public double phaseDegrees() { ... }
+}
+
+public record AcResult(
+    double frequencyHz,
+    Map<String, Complex> nodeVoltages,
+    Map<String, Complex> branchCurrents,
+    boolean converged,
+    Duration solveTime
+) {
+    public Complex voltage(String node) { ... }
+    public double voltageMagnitude(String node) { ... }
+    public Complex current(String componentId) { ... }
+    public double currentMagnitude(String componentId) { ... }
 }
 ```
 
@@ -365,6 +398,7 @@ Main JVM
 LOAD_CIRCUIT <base64-encoded-netlist-lines-json>  →  OK | ERROR <msg>
 RUN_OP                                            →  RESULT <json> | ERROR
 RUN_TRAN <stepSec> <stopSec> <startSec>           →  RESULT <json> | ERROR
+RUN_AC <frequencyHz>                              →  RESULT <json> | ERROR
 ALTER <id> <value>                                →  OK | ERROR
 GET_VECTOR <name>                                 →  VECTOR <json double[]> | ERROR
 BG_HALT                                           →  OK
@@ -401,8 +435,8 @@ Walks the `Circuit` graph and emits lines in the order: title, model definitions
 | RESISTOR | `R{id} {n+} {n-} {ohms}` |
 | CAPACITOR | `C{id} {n+} {n-} {farads} IC={v0}` |
 | INDUCTOR | `L{id} {n+} {n-} {henries} IC={i0}` |
-| VOLTAGE_SOURCE | `V{id} {n+} {n-} DC {volts}` |
-| CURRENT_SOURCE | `I{id} {n+} {n-} DC {amps}` |
+| VOLTAGE_SOURCE | `V{id} {n+} {n-} DC {volts}` or `V{id} {n+} {n-} AC {rmsVolts} {phaseDegrees}` |
+| CURRENT_SOURCE | `I{id} {n+} {n-} DC {amps}` or `I{id} {n+} {n-} AC {rmsAmps} {phaseDegrees}` |
 | DIODE | `D{id} {anode} {cathode} {model}` |
 | BJT_NPN | `Q{id} {c} {b} {e} {model}` |
 | NMOS | `M{id} {d} {g} {s} {b} {model}` |
@@ -451,6 +485,22 @@ session.runTransient(config)
       └── Worker: VectorExtractor extracts waveform
   └── return TransientResult
 ```
+
+### Fixed-frequency AC
+
+```
+session.runAc(config)
+  └── [if dirty] ngSpice_Circ(newNetlist) or alter commands
+  └── RUN_AC frequencyHz
+      └── Worker: ngSpice_Command("ac lin 1 <frequencyHz> <frequencyHz>")
+      └── VectorExtractor: reads complex v(<node>) and <source>#branch vectors
+  └── Session derives resistor branch currents from complex node voltage difference
+  └── return AcResult
+```
+
+`runAc` is synchronous and throws `IllegalStateException` if a transient is already
+running. AC source value changes currently force a netlist reload instead of using
+`alter`, because ngspice AC magnitude/phase alteration is not used in this slice.
 
 ### Transient cancellation and IC capture
 
@@ -506,6 +556,9 @@ engine.close()
 - Re-run `op` or continue transient
 
 `onParameterChanged()` automatically calls `cancelTransient()` first if a transient is running, then sends the `alter` command.
+
+AC voltage/current source value changes are treated as a reload-triggering dirty state
+instead of an `alter` command in the first fixed-frequency AC slice.
 
 **Cost:** Low — no netlist parse or reload.
 
@@ -746,6 +799,7 @@ bluespice-ngspice/src/test/
   NgspiceLibraryTest.java      // intg: JNA loads, ngSpice_Init succeeds
   NgspiceDcOpTest.java         // intg: DC op vs analytical
   NgspiceTransientTest.java    // intg: transient waveform vs analytical
+  NgspiceAcTest.java           // intg: fixed-frequency AC phasors vs analytical
   NgspiceAlterTest.java        // intg: alter path
   NgspiceTopologyTest.java     // intg: add/remove mid-session
   NgspiceCancelTransientTest.java  // intg: cancelTransient + IC continuity

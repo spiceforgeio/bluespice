@@ -45,6 +45,16 @@ class NetlistBuilderTest {
     }
 
     @Test
+    void buildsAcVoltageSourceGoldenNetlist() throws IOException {
+        assertEquals(golden("ac-voltage-divider.sp"), builder.build(Circuits.acVoltageDivider(10.0, 90.0)));
+    }
+
+    @Test
+    void buildsAcCurrentSourceGoldenNetlist() throws IOException {
+        assertEquals(golden("ac-current-divider.sp"), builder.build(Circuits.acCurrentDivider(0.001, -90.0)));
+    }
+
+    @Test
     void injectsCapturedInitialConditions() {
         String netlist = builder.buildDetailed(
                 Circuits.rlcSeries(),
