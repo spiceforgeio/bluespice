@@ -8,7 +8,7 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 - DC operating-point, fixed-frequency AC, and transient simulations
 - Worker-process pool — each session runs in a dedicated child JVM, providing true parallelism and crash isolation
 - Incremental parameter updates via `alter`/`altermod` — no full netlist reload needed for value changes
-- Dirty-region routing dispatches topologically disconnected subcircuits to parallel workers
+- Dirty-region routing dispatches topologically disconnected subcircuits to parallel workers, or sequentially when worker capacity is constrained
 - Published as platform-specific classifier JARs (Maven standard) and as an all-platforms fat JAR for Minecraft mods and self-contained deployments
 - Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64
 
@@ -19,10 +19,10 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 
 ## Dependency
 
-Current source version: `0.2.0`.
+Current source version: `0.2.1`.
 
 BlueSpice is published to Maven Central under group `io.github.spiceforgeio`.
-Tag the release as `v0.2.0` when publishing this version.
+Tag the release as `v0.2.1` when publishing this version.
 
 ### Gradle — classifier JAR (standard)
 
@@ -32,9 +32,9 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.2.0")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.0")
-    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.2.0:$osClassifier") // e.g. linux-x86_64
+    implementation("io.github.spiceforgeio:bluespice-core:0.2.1")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.1")
+    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.2.1:$osClassifier") // e.g. linux-x86_64
 }
 ```
 
@@ -49,13 +49,19 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.2.0")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.0:all")
+    implementation("io.github.spiceforgeio:bluespice-core:0.2.1")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.1:all")
 }
 ```
 
 AC analysis does not require extra artifacts: public AC API types are in
 `bluespice-core`, and the ngspice `.ac` implementation is in `bluespice-ngspice`.
+
+Disconnected circuits are correct with constrained worker pools, including
+`maxWorkers=1`; BlueSpice runs split parts sequentially when there are not enough
+workers to keep every part open concurrently. Consumers such as BlueGrid no longer
+need `EngineConfig.defaults()` for correctness after consuming `0.2.1`, though the
+defaults remain preferred for throughput.
 
 ## Quick start
 

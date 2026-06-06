@@ -1,6 +1,6 @@
 # BlueSpice — Architecture
 
-**Version:** 0.2
+**Version:** 0.2.1
 **Status:** Current
 
 ---
@@ -39,7 +39,7 @@ BlueSpice is a general-purpose Java 21 library for circuit simulation using ngsp
 - **Parameter changes** use ngspice `alter`/`altermod` commands to avoid full netlist reload.
 - **Topology changes** rebuild the netlist and call `ngSpice_Circ` on the existing instance.
 - **Transient cancellation** — any in-progress background transient can be halted via `bg_halt`; partial IC state (capacitor voltages, inductor currents) is captured and injected into the next transient.
-- **Dirty-region simulation** is implemented for topologically disconnected subcircuits only; connected-circuit partitioning is documented but not shipped (approximate and can silently produce wrong answers).
+- **Dirty-region simulation** is implemented for topologically disconnected subcircuits only. Split parts run in parallel when worker capacity is sufficient and sequentially when constrained; connected-circuit partitioning is documented but not shipped (approximate and can silently produce wrong answers).
 
 ---
 
@@ -396,7 +396,8 @@ Main JVM
 
 - **`NgspiceWorker`** is a standalone `main` class in `bluespice-ngspice`. It is launched via `ProcessBuilder`, loads `libngspice` via JNA, reads `WorkerProtocol` messages from stdin, and writes responses to stdout.
 - **`WorkerChannel`** wraps the `Process` object in the main JVM and serializes commands to the child.
-- Each `NgspiceSession` owns one `WorkerChannel` (one child process). The `WorkerPool` caps live workers at `EngineConfig.maxWorkers`. If exhausted, `openSession()` blocks.
+- Each `NgspiceSession` owns one `WorkerChannel` (one child process). The `WorkerPool` caps live workers at `EngineConfig.maxWorkers`. If exhausted, ordinary `openSession()` calls block.
+- Disconnected circuits use `SplitSession`. When the effective worker capacity can keep every disconnected part open at once, `SplitSession` eagerly opens one `NgspiceSession` per part and runs analyses in parallel. When capacity is lower than the part count, including `maxWorkers=1`, `SplitSession` stores the split circuit parts and opens one sub-session at a time for each requested operating-point, transient, or AC solve. Each sequential sub-session is closed before the next part is opened, so split solving cannot deadlock by holding one worker while waiting for another.
 - On `session.close()`, the worker is returned to the pool (state reset, process kept alive) if the pool has capacity; otherwise terminated.
 
 #### Worker protocol (text over stdin/stdout)
@@ -464,11 +465,16 @@ NgspiceEngine.load(engineConfig)
   └── WorkerPool.initialize(maxWorkers)  (workers start lazily on first openSession)
 
 engine.openSession(circuit)
-  └── WorkerPool.acquire()  →  WorkerChannel
-  └── ProcessBuilder launches: java -cp <lib> dev.bluespice.ngspice.worker.NgspiceWorker
-  └── Child: NgspiceLibrary loads libngspice; ngSpice_Init(callbacks)
-  └── NetlistBuilder.build(circuit)  →  LOAD_CIRCUIT
-  └── session ready
+  ├── connected circuit:
+  │   └── WorkerPool.acquire()  →  WorkerChannel
+  │   └── ProcessBuilder launches: java -cp <lib> dev.bluespice.ngspice.worker.NgspiceWorker
+  │   └── Child: NgspiceLibrary loads libngspice; ngSpice_Init(callbacks)
+  │   └── NetlistBuilder.build(circuit)  →  LOAD_CIRCUIT
+  │   └── session ready
+  └── disconnected circuit:
+      └── SplitSession
+          ├── enough workers: open one NgspiceSession per part and run in parallel
+          └── constrained workers: open/run/close one part at a time
 ```
 
 ### Operating point
@@ -761,7 +767,7 @@ implementation("io.github.spiceforgeio:bluespice-ngspice:X.Y.Z:all")
 ```
 groupId:    io.github.spiceforgeio
 artifactId: bluespice-core, bluespice-ngspice
-version:    0.2.0
+version:    0.2.1
 ```
 
 Published to Maven Central via `com.gradleup.nmcp`. Snapshot releases go to GitHub Packages. `bluespice-test-common` and `bluespice-benchmarks` are not published.

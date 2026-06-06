@@ -61,7 +61,8 @@ public final class NgspiceEngine implements SimulationEngine {
     public SimulationSession openSession(Circuit circuit) {
         Objects.requireNonNull(circuit, "circuit");
         if (Topology.isDisconnected(circuit)) {
-            return new SplitSession(circuit, this::openSingleSession);
+            int partCount = Topology.split(circuit).size();
+            return new SplitSession(circuit, this::openSingleSession, partCount <= effectiveMaxWorkers());
         }
         return openSingleSession(circuit);
     }
@@ -122,5 +123,15 @@ public final class NgspiceEngine implements SimulationEngine {
                 ? message.substring("invalid netlist:".length()).trim()
                 : message;
         return new IllegalArgumentException("Invalid netlist: " + normalized);
+    }
+
+    private int effectiveMaxWorkers() {
+        if (config.inProcessMode()) {
+            return 1;
+        }
+        if (config.maxWorkers() > 0) {
+            return config.maxWorkers();
+        }
+        return Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
     }
 }

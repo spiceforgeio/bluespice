@@ -28,15 +28,24 @@ import java.util.function.Function;
 final class SplitSession implements SimulationSession {
     private final Circuit circuit;
     private final Function<Circuit, NgspiceSession> sessionFactory;
+    private final boolean keepSessionsOpen;
     private final AtomicBoolean transientRunning = new AtomicBoolean(false);
-    private List<NgspiceSession> sessions;
-    private Map<String, NgspiceSession> sessionsByComponentId;
+    private List<Circuit> parts = List.of();
+    private Map<String, Circuit> partsByComponentId = Map.of();
+    private List<NgspiceSession> sessions = List.of();
+    private Map<String, NgspiceSession> sessionsByComponentId = Map.of();
     private ExecutorService executor;
+    private volatile NgspiceSession activeSequentialSession;
     private boolean closed;
 
     SplitSession(Circuit circuit, Function<Circuit, NgspiceSession> sessionFactory) {
+        this(circuit, sessionFactory, true);
+    }
+
+    SplitSession(Circuit circuit, Function<Circuit, NgspiceSession> sessionFactory, boolean keepSessionsOpen) {
         this.circuit = Objects.requireNonNull(circuit, "circuit");
         this.sessionFactory = Objects.requireNonNull(sessionFactory, "sessionFactory");
+        this.keepSessionsOpen = keepSessionsOpen;
         replaceSessions();
     }
 
@@ -45,7 +54,10 @@ final class SplitSession implements SimulationSession {
         SessionSet snapshot;
         synchronized (this) {
             ensureOpen();
-            snapshot = sessionSet();
+            if (!keepSessionsOpen) {
+                return mergeOperatingPoints(runSequential(parts, NgspiceSession::runOperatingPoint));
+            }
+            snapshot = persistentSessionSet();
         }
         return mergeOperatingPoints(runAll(snapshot, NgspiceSession::runOperatingPoint));
     }
@@ -56,10 +68,18 @@ final class SplitSession implements SimulationSession {
         SessionSet snapshot;
         synchronized (this) {
             ensureOpen();
-            snapshot = sessionSet();
             if (!transientRunning.compareAndSet(false, true)) {
                 throw new IllegalStateException("transient is already running");
             }
+            if (!keepSessionsOpen) {
+                try {
+                    return mergeTransients(runSequential(parts, session -> session.runTransient(config)));
+                } finally {
+                    transientRunning.set(false);
+                    activeSequentialSession = null;
+                }
+            }
+            snapshot = persistentSessionSet();
         }
 
         try {
@@ -78,7 +98,10 @@ final class SplitSession implements SimulationSession {
             if (transientRunning.get()) {
                 throw new IllegalStateException("transient is already running");
             }
-            snapshot = sessionSet();
+            if (!keepSessionsOpen) {
+                return mergeAc(runSequential(parts, session -> session.runAc(config)));
+            }
+            snapshot = persistentSessionSet();
         }
         return mergeAc(runAll(snapshot, session -> session.runAc(config)));
     }
@@ -86,6 +109,13 @@ final class SplitSession implements SimulationSession {
     @Override
     public void cancelTransient() {
         if (!transientRunning.get()) {
+            return;
+        }
+        if (!keepSessionsOpen) {
+            NgspiceSession session = activeSequentialSession;
+            if (session != null) {
+                session.cancelTransient();
+            }
             return;
         }
         for (NgspiceSession session : sessionSnapshot()) {
@@ -107,6 +137,14 @@ final class SplitSession implements SimulationSession {
         ensureOpen();
         Objects.requireNonNull(componentId, "componentId");
         Objects.requireNonNull(newValue, "newValue");
+        if (!keepSessionsOpen) {
+            Circuit part = partsByComponentId.get(componentId);
+            if (part == null) {
+                throw new IllegalArgumentException("component not found in split session: " + componentId);
+            }
+            part.updateValue(componentId, newValue);
+            return;
+        }
         NgspiceSession session = sessionsByComponentId.get(componentId);
         if (session == null) {
             throw new IllegalArgumentException("component not found in split session: " + componentId);
@@ -136,7 +174,7 @@ final class SplitSession implements SimulationSession {
         closeSessions(sessions);
     }
 
-    private SessionSet sessionSet() {
+    private SessionSet persistentSessionSet() {
         return new SessionSet(List.copyOf(sessions), executor);
     }
 
@@ -145,10 +183,23 @@ final class SplitSession implements SimulationSession {
     }
 
     private void replaceSessions() {
-        List<Circuit> parts = Topology.split(circuit);
+        List<Circuit> newParts = Topology.split(circuit);
+        parts = List.copyOf(newParts);
+        partsByComponentId = componentIndexFromParts(parts);
+        if (!keepSessionsOpen) {
+            List<NgspiceSession> oldSessions = sessions;
+            ExecutorService oldExecutor = executor;
+            sessions = List.of();
+            sessionsByComponentId = Map.of();
+            executor = null;
+            shutdownExecutor(oldExecutor);
+            closeSessions(oldSessions);
+            return;
+        }
+
         List<NgspiceSession> created = new ArrayList<>();
         try {
-            for (Circuit part : parts) {
+            for (Circuit part : newParts) {
                 created.add(sessionFactory.apply(part));
             }
         } catch (RuntimeException e) {
@@ -159,17 +210,27 @@ final class SplitSession implements SimulationSession {
         List<NgspiceSession> oldSessions = sessions == null ? List.of() : sessions;
         ExecutorService oldExecutor = executor;
         sessions = List.copyOf(created);
-        sessionsByComponentId = componentIndex(sessions);
+        sessionsByComponentId = componentIndexFromSessions(sessions);
         executor = sessions.size() > 1 ? Executors.newFixedThreadPool(sessions.size()) : null;
         shutdownExecutor(oldExecutor);
         closeSessions(oldSessions);
     }
 
-    private static Map<String, NgspiceSession> componentIndex(List<NgspiceSession> sessions) {
+    private static Map<String, NgspiceSession> componentIndexFromSessions(List<NgspiceSession> sessions) {
         Map<String, NgspiceSession> index = new LinkedHashMap<>();
         for (NgspiceSession session : sessions) {
             for (Component component : session.circuit().components()) {
                 index.put(component.id(), session);
+            }
+        }
+        return Map.copyOf(index);
+    }
+
+    private static Map<String, Circuit> componentIndexFromParts(List<Circuit> parts) {
+        Map<String, Circuit> index = new LinkedHashMap<>();
+        for (Circuit part : parts) {
+            for (Component component : part.components()) {
+                index.put(component.id(), part);
             }
         }
         return Map.copyOf(index);
@@ -290,6 +351,26 @@ final class SplitSession implements SimulationSession {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while running split session", e);
         }
+    }
+
+    private <T> List<T> runSequential(List<Circuit> parts, ThrowingFunction<NgspiceSession, T> action) {
+        if (parts.isEmpty()) {
+            throw new IllegalStateException("split session has no sub-sessions");
+        }
+        List<T> results = new ArrayList<>();
+        for (Circuit part : parts) {
+            try (NgspiceSession session = sessionFactory.apply(part)) {
+                activeSequentialSession = session;
+                results.add(action.apply(session));
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IllegalStateException("split sub-session failed", e);
+            } finally {
+                activeSequentialSession = null;
+            }
+        }
+        return List.copyOf(results);
     }
 
     private static <T> T completedResult(java.util.concurrent.Future<T> future) {
