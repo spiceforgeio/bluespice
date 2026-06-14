@@ -1,6 +1,6 @@
 # BlueSpice — Architecture
 
-**Version:** 0.2.1
+**Version:** 0.3.0
 **Status:** Current
 
 ---
@@ -718,10 +718,9 @@ Run 50–100 short simulations on a dummy circuit per worker at startup to avoid
 
 ## 11. Build, Packaging, and Publishing
 
-The next feature release target for generic mutual-coupled inductor support is
-`0.3.0`. BlueGrid may use a local publish or composite dependency during early
-integration, but shipping transformer support should consume a released BlueSpice
-artifact.
+Generic mutual-coupled inductor support is included in `0.3.0`. BlueGrid may use a
+local publish or composite dependency during early integration, but shipping transformer
+support should consume a released BlueSpice artifact.
 
 ### Building ngspice
 
@@ -823,7 +822,7 @@ implementation("io.github.spiceforgeio:bluespice-ngspice:X.Y.Z:all")
 ```
 groupId:    io.github.spiceforgeio
 artifactId: bluespice-core, bluespice-ngspice
-version:    0.2.1
+version:    0.3.0
 ```
 
 Published to Maven Central via `com.gradleup.nmcp`. Snapshot releases go to GitHub Packages. `bluespice-test-common` and `bluespice-benchmarks` are not published.

@@ -20,12 +20,11 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 
 ## Dependency
 
-Current source version: `0.2.1`.
+Current source version: `0.3.0`.
 
 BlueSpice is published to Maven Central under group `io.github.spiceforgeio`.
-Tag the release as `v0.2.1` when publishing this version.
-Generic mutual-coupled inductor support is planned for the next feature release,
-expected `0.3.0`.
+Tag the release as `v0.3.0` when publishing this version.
+This feature release adds generic mutual-coupled inductor support.
 
 ### Gradle — classifier JAR (standard)
 
@@ -35,9 +34,9 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.2.1")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.1")
-    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.2.1:$osClassifier") // e.g. linux-x86_64
+    implementation("io.github.spiceforgeio:bluespice-core:0.3.0")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.3.0")
+    runtimeOnly("io.github.spiceforgeio:bluespice-ngspice:0.3.0:$osClassifier") // e.g. linux-x86_64
 }
 ```
 
@@ -52,8 +51,8 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.spiceforgeio:bluespice-core:0.2.1")
-    implementation("io.github.spiceforgeio:bluespice-ngspice:0.2.1:all")
+    implementation("io.github.spiceforgeio:bluespice-core:0.3.0")
+    implementation("io.github.spiceforgeio:bluespice-ngspice:0.3.0:all")
 }
 ```
 
@@ -63,7 +62,7 @@ AC analysis does not require extra artifacts: public AC API types are in
 Disconnected circuits are correct with constrained worker pools, including
 `maxWorkers=1`; BlueSpice runs split parts sequentially when there are not enough
 workers to keep every part open concurrently. Consumers such as BlueGrid no longer
-need `EngineConfig.defaults()` for correctness after consuming `0.2.1`, though the
+need `EngineConfig.defaults()` for correctness after consuming `0.2.1` or later, though the
 defaults remain preferred for throughput.
 
 ## Quick start
