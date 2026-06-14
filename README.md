@@ -6,6 +6,7 @@ Java 21 library for circuit simulation backed by [ngspice](https://ngspice.sourc
 
 - Typed Java API for building and modifying circuits at runtime
 - DC operating-point, fixed-frequency AC, and transient simulations
+- Generic mutual coupling between existing inductors for AC coupled-inductor networks
 - Worker-process pool — each session runs in a dedicated child JVM, providing true parallelism and crash isolation
 - Incremental parameter updates via `alter`/`altermod` — no full netlist reload needed for value changes
 - Dirty-region routing dispatches topologically disconnected subcircuits to parallel workers, or sequentially when worker capacity is constrained
@@ -23,6 +24,8 @@ Current source version: `0.2.1`.
 
 BlueSpice is published to Maven Central under group `io.github.spiceforgeio`.
 Tag the release as `v0.2.1` when publishing this version.
+Generic mutual-coupled inductor support is planned for the next feature release,
+expected `0.3.0`.
 
 ### Gradle — classifier JAR (standard)
 
@@ -109,6 +112,30 @@ try (NgspiceEngine engine = NgspiceEngine.load(EngineConfig.defaults());
             ac.voltage("vmid").phaseDegrees());
 }
 ```
+
+### Mutual Coupling
+
+Mutual coupling is a circuit relationship between existing inductors, not a component
+with conductive terminals. The ngspice backend emits it as `K... Lp Ls k`; `K`
+relationships do not expose branch-current results.
+
+```java
+Circuit circuit = Circuit.empty("coupled-inductors");
+Node p = circuit.addNode("primary");
+Node s1 = circuit.addNode("secondaryHigh");
+Node s2 = circuit.addNode("secondaryLow");
+
+circuit.addComponent(VOLTAGE_SOURCE, "V1", new ComponentValue.ACVoltage(10.0, 0.0), p, circuit.ground());
+circuit.addComponent(INDUCTOR, "Lp", new ComponentValue.Inductance(1.0), p, circuit.ground());
+circuit.addComponent(INDUCTOR, "Ls", new ComponentValue.Inductance(4.0), s1, s2);
+circuit.addMutualCoupling("K1", "Lp", "Ls", 0.98);
+```
+
+Magnetically coupled windings are kept in the same solve part when a circuit is split,
+but this does not create conductive continuity between the referenced inductors.
+BlueSpice does not insert hidden reference conductors; a fully floating SPICE island may
+need an explicit high-impedance reference in the caller's circuit if node voltages are
+queried relative to ground.
 
 ## Building from source
 

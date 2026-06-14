@@ -4,12 +4,15 @@ import dev.bluespice.core.circuit.Circuit;
 import dev.bluespice.core.circuit.Component;
 import dev.bluespice.core.circuit.ComponentType;
 import dev.bluespice.core.circuit.ComponentValue;
+import dev.bluespice.core.circuit.MutualCoupling;
 import dev.bluespice.core.circuit.Node;
 import dev.bluespice.ngspice.CapturedIcState;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalDouble;
 
@@ -62,13 +65,18 @@ public final class NetlistBuilder {
         NodeNumbering numbering = NodeNumbering.from(circuit);
         List<String> modelLines = new ArrayList<>();
         List<String> elementLines = new ArrayList<>();
+        Map<String, Component> componentsById = new LinkedHashMap<>();
 
         for (Component component : circuit.components()) {
+            componentsById.put(component.id(), component);
             String modelLine = modelLine(component);
             if (modelLine != null) {
                 modelLines.add(modelLine);
             }
             elementLines.add(elementLine(component, numbering, ic));
+        }
+        for (MutualCoupling coupling : circuit.mutualCouplings()) {
+            elementLines.add(mutualCouplingLine(coupling, componentsById));
         }
 
         List<String> lines = new ArrayList<>();
@@ -99,6 +107,15 @@ public final class NetlistBuilder {
             case VCVS, VCCS, CCVS, CCCS, TRANSMISSION_LINE, XSPICE_BLOCK ->
                     throw new UnsupportedOperationException("netlist support not defined for " + component.type());
         };
+    }
+
+    private String mutualCouplingLine(MutualCoupling coupling, Map<String, Component> componentsById) {
+        Component first = requireInductor(coupling.firstInductorId(), coupling, componentsById);
+        Component second = requireInductor(coupling.secondInductorId(), coupling, componentsById);
+        return spiceElementId(coupling) + " "
+                + spiceElementId(first) + " "
+                + spiceElementId(second) + " "
+                + spiceDouble(coupling.couplingCoefficient());
     }
 
     private String voltageSourceLine(Component component, NodeNumbering numbering) {
@@ -218,6 +235,14 @@ public final class NetlistBuilder {
         };
     }
 
+    /**
+     * Returns the SPICE element id for a mutual coupling relationship.
+     */
+    public static String spiceElementId(MutualCoupling coupling) {
+        String id = coupling.id();
+        return id.startsWith("K") ? id : "K" + id;
+    }
+
     private static List<String> nodeNames(Collection<Node> nodes, NodeNumbering numbering) {
         List<String> names = new ArrayList<>();
         for (Node node : nodes) {
@@ -274,6 +299,22 @@ public final class NetlistBuilder {
             return ref.modelName();
         }
         return "SW" + component.id();
+    }
+
+    private static Component requireInductor(
+            String componentId,
+            MutualCoupling coupling,
+            Map<String, Component> componentsById) {
+        Component component = componentsById.get(componentId);
+        if (component == null) {
+            throw new IllegalArgumentException(
+                    "mutual coupling " + coupling.id() + " references missing component: " + componentId);
+        }
+        if (component.type() != ComponentType.INDUCTOR) {
+            throw new IllegalArgumentException(
+                    "mutual coupling " + coupling.id() + " references non-inductor component: " + componentId);
+        }
+        return component;
     }
 
     private static String spiceDouble(double value) {

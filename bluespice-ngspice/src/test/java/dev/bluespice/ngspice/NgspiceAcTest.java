@@ -1,11 +1,15 @@
 package dev.bluespice.ngspice;
 
 import static dev.bluespice.core.circuit.ComponentType.RESISTOR;
+import static dev.bluespice.core.circuit.ComponentType.INDUCTOR;
 import static dev.bluespice.testcommon.SimulationAssertions.tolerancePct;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.bluespice.core.circuit.Circuit;
 import dev.bluespice.core.circuit.ComponentValue;
+import dev.bluespice.core.circuit.Node;
 import dev.bluespice.core.sim.AcConfig;
 import dev.bluespice.core.sim.EngineConfig;
 import dev.bluespice.testcommon.Circuits;
@@ -80,6 +84,81 @@ class NgspiceAcTest {
     }
 
     @Test
+    void exposesInductorBranchCurrentWithPassiveOrientation() {
+        double frequency = 50.0;
+        Circuit circuit = Circuit.empty("ac-inductor-current");
+        Node vin = circuit.addNode("vin");
+        Node inductorHigh = circuit.addNode("inductorHigh");
+        circuit.addComponent(
+                dev.bluespice.core.circuit.ComponentType.VOLTAGE_SOURCE,
+                "V1",
+                new ComponentValue.ACVoltage(10.0, 0.0),
+                vin,
+                circuit.ground());
+        circuit.addComponent(RESISTOR, "Rdrive", new ComponentValue.Resistance(1.0E-3), vin, inductorHigh);
+        circuit.addComponent(INDUCTOR, "coil", new ComponentValue.Inductance(1.0), inductorHigh, circuit.ground());
+
+        try (NgspiceEngine engine = engine();
+                var session = engine.openSession(circuit)) {
+            var result = session.runAc(new AcConfig(frequency));
+
+            double reactance = 2.0 * Math.PI * frequency;
+            double impedance = Math.hypot(1.0E-3, reactance);
+            assertNear(10.0 / impedance, result.currentMagnitude("coil"), tolerancePct(0.1));
+            assertNear(-90.0, result.current("coil").phaseDegrees(), 0.1);
+            assertFalse(result.branchCurrents().containsKey("Lcoil"));
+        }
+    }
+
+    @Test
+    void coupledInductorsProduceOpenSecondaryVoltage() {
+        try (NgspiceEngine engine = engine();
+                var session = engine.openSession(coupledInductorCircuit(1.0, null))) {
+            var result = session.runAc(new AcConfig(50.0));
+
+            assertSecondaryVoltage(result, 20.0, tolerancePct(0.5));
+            assertFalse(result.branchCurrents().containsKey("K1"));
+            assertTrue(result.branchCurrents().containsKey("Lp"));
+            assertTrue(result.branchCurrents().containsKey("Ls"));
+        }
+    }
+
+    @Test
+    void coupledInductorsProduceLoadedTurnsRatioVoltage() {
+        try (NgspiceEngine engine = engine();
+                var session = engine.openSession(coupledInductorCircuit(1.0, 1000.0))) {
+            var result = session.runAc(new AcConfig(50.0));
+
+            assertSecondaryVoltage(result, 20.0, tolerancePct(0.5));
+            assertNear(0.02, result.currentMagnitude("Rload"), tolerancePct(1.0));
+        }
+    }
+
+    @Test
+    void imperfectCouplingReducesOpenSecondaryVoltage() {
+        try (NgspiceEngine engine = engine();
+                var session = engine.openSession(coupledInductorCircuit(0.8, null))) {
+            var result = session.runAc(new AcConfig(50.0));
+
+            assertSecondaryVoltage(result, 16.0, tolerancePct(0.5));
+        }
+    }
+
+    @Test
+    void topologyReloadReflectsMutualCouplingChanges() {
+        Circuit circuit = coupledInductorCircuit(1.0, null);
+        try (NgspiceEngine engine = engine();
+                var session = engine.openSession(circuit)) {
+            assertSecondaryVoltage(session.runAc(new AcConfig(50.0)), 20.0, tolerancePct(0.5));
+
+            circuit.updateMutualCoupling("K1", 0.5);
+            session.onTopologyChanged();
+
+            assertSecondaryVoltage(session.runAc(new AcConfig(50.0)), 10.0, tolerancePct(0.5));
+        }
+    }
+
+    @Test
     void runAcReflectsParameterAndTopologyChanges() {
         var circuit = Circuits.acVoltageDivider(10.0, 0.0);
         try (NgspiceEngine engine = engine();
@@ -105,6 +184,40 @@ class NgspiceAcTest {
                 1,
                 EngineConfig.defaults().simulationTimeout(),
                 false));
+    }
+
+    private static Circuit coupledInductorCircuit(double couplingCoefficient, Double loadResistance) {
+        Circuit circuit = Circuit.empty("coupled-inductor-ac");
+        Node source = circuit.addNode("source");
+        Node primary = circuit.addNode("primary");
+        Node secondaryHigh = circuit.addNode("secondaryHigh");
+        Node secondaryLow = circuit.addNode("secondaryLow");
+        circuit.addComponent(
+                dev.bluespice.core.circuit.ComponentType.VOLTAGE_SOURCE,
+                "V1",
+                new ComponentValue.ACVoltage(10.0, 0.0),
+                source,
+                circuit.ground());
+        circuit.addComponent(RESISTOR, "Rdrive",
+                new ComponentValue.Resistance(1.0E-3),
+                source,
+                primary);
+        circuit.addComponent(INDUCTOR, "Lp", new ComponentValue.Inductance(1.0), primary, circuit.ground());
+        circuit.addComponent(INDUCTOR, "Ls", new ComponentValue.Inductance(4.0), secondaryHigh, secondaryLow);
+        circuit.addComponent(RESISTOR, "Rref",
+                new ComponentValue.Resistance(1.0E12), secondaryLow, circuit.ground());
+        if (loadResistance != null) {
+            circuit.addComponent(RESISTOR, "Rload",
+                    new ComponentValue.Resistance(loadResistance), secondaryHigh, secondaryLow);
+        }
+        circuit.addMutualCoupling("K1", "Lp", "Ls", couplingCoefficient);
+        return circuit;
+    }
+
+    private static void assertSecondaryVoltage(dev.bluespice.core.sim.AcResult result, double expected, double tolerance) {
+        var voltage = result.voltage("secondaryHigh").minus(result.voltage("secondaryLow"));
+        assertNear(expected, voltage.magnitude(), tolerance);
+        assertEquals(0.0, normalizeDegrees(voltage.phaseDegrees()), 0.5);
     }
 
     private Path nativeLibraryPath() {

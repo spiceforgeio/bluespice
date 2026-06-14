@@ -1,6 +1,7 @@
 package dev.bluespice.ngspice;
 
 import static dev.bluespice.core.circuit.ComponentType.CAPACITOR;
+import static dev.bluespice.core.circuit.ComponentType.INDUCTOR;
 import static dev.bluespice.core.circuit.ComponentType.RESISTOR;
 import static dev.bluespice.core.circuit.ComponentType.VOLTAGE_SOURCE;
 import static dev.bluespice.testcommon.SimulationAssertions.assertVoltageNear;
@@ -56,6 +57,23 @@ class NgspiceDisconnectedTest {
 
             assertEquals(3.0, result.voltageMagnitude("vout1"), 0.003);
             assertEquals(6.0, result.voltageMagnitude("vout2"), 0.006);
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void coupledIsolatedAcWindingsStayInSameSplitSubSession() {
+        Circuit circuit = coupledWindingsAndIndependentDivider();
+        try (NgspiceEngine engine = engine(1);
+                SimulationSession session = engine.openSession(circuit)) {
+            assertInstanceOf(SplitSession.class, session);
+            assertEquals(2, Topology.split(circuit).size());
+
+            var result = session.runAc(new AcConfig(50.0));
+
+            var secondaryVoltage = result.voltage("secondaryHigh").minus(result.voltage("secondaryLow"));
+            assertEquals(20.0, secondaryVoltage.magnitude(), 0.1);
+            assertEquals(3.0, result.voltageMagnitude("vout"), 0.003);
         }
     }
 
@@ -198,6 +216,29 @@ class NgspiceDisconnectedTest {
         circuit.addComponent(VOLTAGE_SOURCE, "V2", new ComponentValue.ACVoltage(8.0, 0.0), vin2, circuit.ground());
         circuit.addComponent(RESISTOR, "R2A", new ComponentValue.Resistance(1000.0), vin2, vout2);
         circuit.addComponent(RESISTOR, "R2B", new ComponentValue.Resistance(3000.0), vout2, circuit.ground());
+        return circuit;
+    }
+
+    private static Circuit coupledWindingsAndIndependentDivider() {
+        Circuit circuit = Circuit.empty("coupled-and-independent");
+        Node source = circuit.addNode("source");
+        Node primary = circuit.addNode("primary");
+        Node secondaryHigh = circuit.addNode("secondaryHigh");
+        Node secondaryLow = circuit.addNode("secondaryLow");
+        Node vin = circuit.addNode("vin");
+        Node vout = circuit.addNode("vout");
+        circuit.addComponent(VOLTAGE_SOURCE, "V1",
+                new ComponentValue.ACVoltage(10.0, 0.0), source, circuit.ground());
+        circuit.addComponent(RESISTOR, "Rdrive", new ComponentValue.Resistance(1.0E-3), source, primary);
+        circuit.addComponent(INDUCTOR, "Lp", new ComponentValue.Inductance(1.0), primary, circuit.ground());
+        circuit.addComponent(INDUCTOR, "Ls", new ComponentValue.Inductance(4.0), secondaryHigh, secondaryLow);
+        circuit.addComponent(RESISTOR, "Rref",
+                new ComponentValue.Resistance(1.0E12), secondaryLow, circuit.ground());
+        circuit.addMutualCoupling("K1", "Lp", "Ls", 1.0);
+        circuit.addComponent(VOLTAGE_SOURCE, "V2",
+                new ComponentValue.ACVoltage(6.0, 0.0), vin, circuit.ground());
+        circuit.addComponent(RESISTOR, "R1", new ComponentValue.Resistance(1000.0), vin, vout);
+        circuit.addComponent(RESISTOR, "R2", new ComponentValue.Resistance(1000.0), vout, circuit.ground());
         return circuit;
     }
 

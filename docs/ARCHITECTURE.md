@@ -127,6 +127,15 @@ public final class Circuit {
     public void removeComponent(String id);
     public void updateValue(String id, ComponentValue newValue);
 
+    public MutualCoupling addMutualCoupling(String id,
+                                            String firstInductorId,
+                                            String secondInductorId,
+                                            double couplingCoefficient);
+    public void removeMutualCoupling(String id);
+    public void updateMutualCoupling(String id, double couplingCoefficient);
+    public Collection<MutualCoupling> mutualCouplings();
+    public MutualCoupling getMutualCoupling(String id);
+
     public Set<Node> nodes();
     public Collection<Component> components();
     public Component getComponent(String id);
@@ -134,6 +143,28 @@ public final class Circuit {
     public Circuit snapshot();  // deep copy, safe to pass to background thread
 }
 ```
+
+### `MutualCoupling`
+
+```java
+public record MutualCoupling(
+    String id,
+    String firstInductorId,
+    String secondInductorId,
+    double couplingCoefficient
+) {}
+```
+
+`MutualCoupling` is a public circuit relationship between two existing
+`ComponentType.INDUCTOR` components. It is stored separately from ordinary
+`Component` instances because it has no conductive terminals. Validation requires a
+nonblank id unique among mutual couplings, two distinct existing inductor ids, no
+duplicate unordered inductor pair, and a finite coupling coefficient where
+`0.0 < k <= 1.0`. Removing a referenced component or node automatically removes
+dependent couplings. `Circuit.snapshot()` copies mutual couplings.
+
+Negative coupling coefficients are not part of the first public API; callers express
+polarity through the terminal order of the referenced inductors.
 
 ### `ComponentType`
 
@@ -225,8 +256,9 @@ The first AC API is fixed-frequency only. `frequencyHz` must be finite and posit
 Public AC source magnitudes and result phasors are RMS by convention.
 AC branch currents use the passive sign convention from component terminal 0 to terminal
 1. Resistor currents are derived from complex node-voltage differences with that
-orientation; ngspice voltage-source branch vectors are exposed with the same passive
-orientation, so a source delivering power reports negative real current.
+orientation. Inductor and voltage-source branch vectors are exposed with the same
+passive orientation, so a source delivering power reports negative real current.
+Mutual coupling `K` relationships do not expose branch-current vectors.
 
 ### Result types
 
@@ -434,7 +466,10 @@ C1 vout 0 1e-6
 
 ### 6.2 `NetlistBuilder`
 
-Walks the `Circuit` graph and emits lines in the order: title, model definitions, element lines, `.end`. The `NodeNumbering` object maps `Node` objects to SPICE string labels. Named nodes use their label directly; anonymous nodes get `_n<id>`.
+Walks the `Circuit` graph and emits lines in the order: title, model definitions,
+component element lines, mutual coupling lines, `.end`. The `NodeNumbering` object maps
+`Node` objects to SPICE string labels. Named nodes use their label directly; anonymous
+nodes get `_n<id>`.
 
 ### 6.3 Element line mapping
 
@@ -445,6 +480,7 @@ Walks the `Circuit` graph and emits lines in the order: title, model definitions
 | INDUCTOR | `L{id} {n+} {n-} {henries} IC={i0}` |
 | VOLTAGE_SOURCE | `V{id} {n+} {n-} DC {volts}` or `V{id} {n+} {n-} AC {rmsVolts} {phaseDegrees}` |
 | CURRENT_SOURCE | `I{id} {n+} {n-} DC {amps}` or `I{id} {n+} {n-} AC {rmsAmps} {phaseDegrees}` |
+| MutualCoupling | `K{id} L{firstInductorId} L{secondInductorId} {k}` |
 | DIODE | `D{id} {anode} {cathode} {model}` |
 | BJT_NPN | `Q{id} {c} {b} {e} {model}` |
 | NMOS | `M{id} {d} {g} {s} {b} {model}` |
@@ -506,8 +542,9 @@ session.runAc(config)
   └── [if dirty] ngSpice_Circ(newNetlist) or alter commands
   └── RUN_AC frequencyHz
       └── Worker: ngSpice_Command("ac lin 1 <frequencyHz> <frequencyHz>")
-      └── VectorExtractor: reads complex v(<node>) and <source>#branch vectors
+      └── VectorExtractor: reads complex v(<node>) and branch vectors for inductors and voltage sources
   └── Session derives resistor branch currents from complex node voltage difference
+  └── Mutual coupling K elements are solved by ngspice but not exposed as branch currents
   └── return AcResult
 ```
 
@@ -554,7 +591,7 @@ engine.close()
 
 ## 8. Incremental Update Strategy
 
-### Topology change (add/remove node or component)
+### Topology change (add/remove node/component or mutual coupling)
 
 1. Rebuild netlist via `NetlistBuilder`
 2. `ngSpice_Circ(newNetlistLines)` — in-place reload without reinitializing ngspice
@@ -572,6 +609,8 @@ engine.close()
 
 AC voltage/current source value changes are treated as a reload-triggering dirty state
 instead of an `alter` command in the first fixed-frequency AC slice.
+Mutual coupling coefficient changes also require `onTopologyChanged()` in this slice;
+`alter` for `K` coefficients is intentionally out of scope.
 
 **Cost:** Low — no netlist parse or reload.
 
@@ -588,7 +627,7 @@ Circuit change received
   │
   ├── Only values changed?  →  alter/altermod → re-run op or continue tran
   ├── Switch state changed? →  alter control voltage → re-run op or continue tran
-  └── Topology changed?     →  rebuild netlist → ngSpice_Circ → op → tran
+  └── Topology/coupling changed? → rebuild netlist → ngSpice_Circ → op → tran
 ```
 
 ---
@@ -601,7 +640,19 @@ SPICE solves the full MNA matrix globally. It is not valid to simulate a connect
 
 ### Disconnected subcircuits (implemented)
 
-If the circuit graph has multiple connected components (no path between them except through ground), each is simulated independently. The library detects this via BFS and splits the netlist into independent blocks. This is mathematically exact.
+If the circuit graph has multiple connected components (no path between them except
+through ground), each is simulated independently. The library detects this via BFS and
+splits the netlist into independent blocks. This is mathematically exact.
+
+Mutual coupling adds solve-only connectivity: magnetically coupled inductors are copied
+into the same split circuit part even when their windings are electrically isolated.
+This does not add conductive node continuity, and `Topology.connectedComponents(...)`
+continues to report ordinary conductive connectivity. Split copies include only
+mutual couplings whose referenced inductors are both present in the copied part.
+BlueSpice does not add hidden reference conductors for isolated magnetic islands. As
+with ordinary SPICE circuits, a completely floating island can be singular when node
+voltages are requested relative to ground; callers may add an explicit high-impedance
+reference when they need a solve reference without modeling a meaningful conductive path.
 
 ### Connected-circuit partitioning (not implemented)
 
@@ -666,6 +717,11 @@ Run 50–100 short simulations on a dummy circuit per worker at startup to avoid
 ---
 
 ## 11. Build, Packaging, and Publishing
+
+The next feature release target for generic mutual-coupled inductor support is
+`0.3.0`. BlueGrid may use a local publish or composite dependency during early
+integration, but shipping transformer support should consume a released BlueSpice
+artifact.
 
 ### Building ngspice
 

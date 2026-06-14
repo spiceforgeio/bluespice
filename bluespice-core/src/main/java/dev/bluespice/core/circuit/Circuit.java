@@ -23,22 +23,26 @@ public final class Circuit {
     private final String name;
     private final Map<String, Node> nodesByLabel;
     private final Map<String, Component> componentsById;
+    private final Map<String, MutualCoupling> mutualCouplingsById;
     private long nextNodeId;
 
     private Circuit(String name) {
         this.name = requireText(name, "name");
         this.nodesByLabel = new LinkedHashMap<>();
         this.componentsById = new LinkedHashMap<>();
+        this.mutualCouplingsById = new LinkedHashMap<>();
         this.nextNodeId = 1;
         nodesByLabel.put("0", new Node("0", 0, true));
     }
 
     private Circuit(String name, long nextNodeId, Map<String, Node> nodesByLabel,
-                    Map<String, Component> componentsById) {
+                    Map<String, Component> componentsById,
+                    Map<String, MutualCoupling> mutualCouplingsById) {
         this.name = name;
         this.nextNodeId = nextNodeId;
         this.nodesByLabel = nodesByLabel;
         this.componentsById = componentsById;
+        this.mutualCouplingsById = mutualCouplingsById;
     }
 
     /**
@@ -96,7 +100,16 @@ public final class Circuit {
             throw new NoSuchElementException("node not found: " + node.label());
         }
         nodesByLabel.remove(node.label());
-        componentsById.values().removeIf(component -> component.terminals().contains(node));
+        Set<String> removedComponentIds = new LinkedHashSet<>();
+        componentsById.values().removeIf(component -> {
+            boolean remove = component.terminals().contains(node);
+            if (remove) {
+                removedComponentIds.add(component.id());
+            }
+            return remove;
+        });
+        mutualCouplingsById.values().removeIf(coupling ->
+                removedComponentIds.stream().anyMatch(coupling::references));
     }
 
     /**
@@ -128,6 +141,7 @@ public final class Circuit {
         if (componentsById.remove(normalizedId) == null) {
             throw new NoSuchElementException("component not found: " + normalizedId);
         }
+        mutualCouplingsById.values().removeIf(coupling -> coupling.references(normalizedId));
     }
 
     /**
@@ -137,6 +151,53 @@ public final class Circuit {
         String normalizedId = requireText(id, "id");
         Component component = getComponent(normalizedId);
         componentsById.put(normalizedId, component.withValue(newValue));
+    }
+
+    /**
+     * Adds a magnetic coupling relationship between two existing inductors.
+     */
+    public synchronized MutualCoupling addMutualCoupling(
+            String id,
+            String firstInductorId,
+            String secondInductorId,
+            double couplingCoefficient) {
+        MutualCoupling coupling = new MutualCoupling(id, firstInductorId, secondInductorId, couplingCoefficient);
+        if (mutualCouplingsById.containsKey(coupling.id())) {
+            throw new IllegalArgumentException("mutual coupling already exists: " + coupling.id());
+        }
+        validateInductorReference(coupling.firstInductorId(), "firstInductorId");
+        validateInductorReference(coupling.secondInductorId(), "secondInductorId");
+        for (MutualCoupling existing : mutualCouplingsById.values()) {
+            if (existing.hasUnorderedPair(coupling.firstInductorId(), coupling.secondInductorId())) {
+                throw new IllegalArgumentException("mutual coupling already exists for inductors: "
+                        + coupling.firstInductorId() + ", " + coupling.secondInductorId());
+            }
+        }
+        mutualCouplingsById.put(coupling.id(), coupling);
+        return coupling;
+    }
+
+    /**
+     * Removes a magnetic coupling relationship by id.
+     */
+    public synchronized void removeMutualCoupling(String id) {
+        String normalizedId = requireText(id, "id");
+        if (mutualCouplingsById.remove(normalizedId) == null) {
+            throw new NoSuchElementException("mutual coupling not found: " + normalizedId);
+        }
+    }
+
+    /**
+     * Replaces a magnetic coupling coefficient without changing referenced inductors.
+     */
+    public synchronized void updateMutualCoupling(String id, double couplingCoefficient) {
+        String normalizedId = requireText(id, "id");
+        MutualCoupling coupling = getMutualCoupling(normalizedId);
+        mutualCouplingsById.put(normalizedId, new MutualCoupling(
+                coupling.id(),
+                coupling.firstInductorId(),
+                coupling.secondInductorId(),
+                couplingCoefficient));
     }
 
     /**
@@ -154,6 +215,13 @@ public final class Circuit {
     }
 
     /**
+     * Returns a stable copy of the current magnetic coupling relationships.
+     */
+    public synchronized Collection<MutualCoupling> mutualCouplings() {
+        return List.copyOf(mutualCouplingsById.values());
+    }
+
+    /**
      * Looks up a component by id.
      */
     public synchronized Component getComponent(String id) {
@@ -163,6 +231,18 @@ public final class Circuit {
             throw new NoSuchElementException("component not found: " + normalizedId);
         }
         return component;
+    }
+
+    /**
+     * Looks up a magnetic coupling relationship by id.
+     */
+    public synchronized MutualCoupling getMutualCoupling(String id) {
+        String normalizedId = requireText(id, "id");
+        MutualCoupling coupling = mutualCouplingsById.get(normalizedId);
+        if (coupling == null) {
+            throw new NoSuchElementException("mutual coupling not found: " + normalizedId);
+        }
+        return coupling;
     }
 
     /**
@@ -196,7 +276,17 @@ public final class Circuit {
             copiedComponents.put(component.id(), new Component(
                     component.id(), component.type(), component.value(), terminals));
         }
-        return new Circuit(name, nextNodeId, copiedNodes, copiedComponents);
+        return new Circuit(name, nextNodeId, copiedNodes, copiedComponents, new LinkedHashMap<>(mutualCouplingsById));
+    }
+
+    private void validateInductorReference(String componentId, String name) {
+        Component component = componentsById.get(componentId);
+        if (component == null) {
+            throw new NoSuchElementException(name + " component not found: " + componentId);
+        }
+        if (component.type() != ComponentType.INDUCTOR) {
+            throw new IllegalArgumentException(name + " must reference an INDUCTOR component: " + componentId);
+        }
     }
 
     private List<Node> validateTerminals(Node[] terminals) {

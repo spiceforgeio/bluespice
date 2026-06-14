@@ -88,7 +88,7 @@ public final class NgspiceSession implements SimulationSession {
                 lastCapturedIc = result.capturedIc();
                 icDirty = !lastCapturedIc.isEmpty();
             }
-            return result.result();
+            return withNormalizedBranchCurrents(result.result());
         } finally {
             transientRunning.set(false);
             synchronized (transientLock) {
@@ -248,7 +248,7 @@ public final class NgspiceSession implements SimulationSession {
     }
 
     private OperatingPointResult withDerivedBranchCurrents(OperatingPointResult result) {
-        Map<String, Double> branchCurrents = new LinkedHashMap<>(result.branchCurrents());
+        Map<String, Double> branchCurrents = normalizedBranchCurrents(result.branchCurrents());
         for (Component component : circuit.components()) {
             if (component.type() == ComponentType.RESISTOR && !branchCurrents.containsKey(component.id())) {
                 resistorCurrent(component, result.nodeVoltages())
@@ -263,11 +263,9 @@ public final class NgspiceSession implements SimulationSession {
     }
 
     private AcResult withDerivedBranchCurrents(AcResult result) {
-        Map<String, Complex> branchCurrents = new LinkedHashMap<>(result.branchCurrents());
+        Map<String, Complex> branchCurrents = normalizedBranchCurrents(result.branchCurrents());
         for (Component component : circuit.components()) {
-            if (component.type() == ComponentType.VOLTAGE_SOURCE) {
-                normalizeVoltageSourceCurrent(component, branchCurrents);
-            } else if (component.type() == ComponentType.RESISTOR && !branchCurrents.containsKey(component.id())) {
+            if (component.type() == ComponentType.RESISTOR && !branchCurrents.containsKey(component.id())) {
                 resistorCurrentAc(component, result.nodeVoltages())
                         .ifPresent(current -> branchCurrents.put(component.id(), current));
             }
@@ -280,15 +278,34 @@ public final class NgspiceSession implements SimulationSession {
                 result.solveTime());
     }
 
-    private void normalizeVoltageSourceCurrent(Component component, Map<String, Complex> branchCurrents) {
+    private TransientResult withNormalizedBranchCurrents(TransientResult result) {
+        return new TransientResult(
+                result.timePoints(),
+                result.nodeVoltages(),
+                normalizedBranchCurrents(result.branchCurrents()),
+                result.completed(),
+                result.solveTime());
+    }
+
+    private <T> Map<String, T> normalizedBranchCurrents(Map<String, T> branchCurrents) {
+        Map<String, T> normalized = new LinkedHashMap<>(branchCurrents);
+        for (Component component : circuit.components()) {
+            if (component.type() == ComponentType.VOLTAGE_SOURCE || component.type() == ComponentType.INDUCTOR) {
+                normalizeBranchCurrent(component, normalized);
+            }
+        }
+        return normalized;
+    }
+
+    private <T> void normalizeBranchCurrent(Component component, Map<String, T> branchCurrents) {
         String spiceId = NetlistBuilder.spiceElementId(component);
-        Complex current = branchCurrents.get(spiceId);
+        T current = branchCurrents.get(spiceId);
         if (current == null) {
             return;
         }
 
-        // ngspice voltage-source branch current is positive from the positive source
-        // terminal to the negative source terminal, matching BlueSpice terminal 0 -> 1.
+        // ngspice branch current is positive from terminal 0 to terminal 1 for
+        // supported inductor and voltage-source branch vectors.
         branchCurrents.put(component.id(), current);
         if (!component.id().equals(spiceId)) {
             branchCurrents.remove(spiceId);
